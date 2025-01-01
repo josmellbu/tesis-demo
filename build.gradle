@@ -1,6 +1,6 @@
 plugins {
 	id 'java'
-	id 'org.springframework.boot' version '3.4.0'
+	id 'org.springframework.boot' version '3.2.3'
 	id 'io.spring.dependency-management' version '1.1.6'
 }
 
@@ -23,14 +23,6 @@ repositories {
 	mavenCentral()
 }
 
-ext {
-    springBootVersion = '3.1.2'
-    mapstructVersion = '1.5.5.Final'
-    lombokVersion = '1.18.34'
-    springdocOpenapiVersion = '2.4.0'
-    mavenArchetypeVersion = '3.2.1'
-}
-
 dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-webflux'
@@ -39,15 +31,22 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.mapstruct:mapstruct:1.5.5.Final'
     annotationProcessor 'org.mapstruct:mapstruct-processor:1.5.5.Final'
-    compileOnly 'org.projectlombok:lombok'
-    annotationProcessor 'org.projectlombok:lombok'
+    compileOnly 'org.projectlombok:lombok:1.18.30'
+    annotationProcessor 'org.projectlombok:lombok:1.18.30'
+    annotationProcessor 'org.projectlombok:lombok-mapstruct-binding:0.2.0'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'io.projectreactor:reactor-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.2.0' // Nueva versión de SpringDoc
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.4.0'
     developmentOnly 'org.springframework.boot:spring-boot-devtools'
 }
 
+tasks.withType(JavaCompile) {
+    options.compilerArgs = [
+        '-Amapstruct.defaultComponentModel=spring',
+        '-Amapstruct.defaultInjectionStrategy=constructor'
+    ]
+}
 
 tasks.named('test') {
 	useJUnitPlatform()

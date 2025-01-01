@@ -34,6 +34,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
 import java.util.Optional;
+import java.util.UUID;
 import java.util.function.Supplier;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -62,14 +63,14 @@ public class InvoiceRestController {
         Supplier<BusinessRuleException> exceptionSupplier = () -> new BusinessRuleException("NO_FOUND", "There are no elements", HttpStatus.NOT_FOUND);
         return Optional.ofNullable(findAll)
                 .filter(list -> !list.isEmpty())
-                .map(irspm::InvoiceListToInvoiceResposeList)
+                .map(irspm::InvoiceListToInvoiceResponseList) // Cambiar a InvoiceListToInvoiceResponseList
                 .orElseThrow(exceptionSupplier);
     }
 
     @GetMapping("/{id}")
     public InvoiceResponse get(@PathVariable String id) throws BusinessRuleException {
         Optional<Invoice> findById = billingRepository.findById(id);
-        return findById.map(irspm::InvoiceToInvoiceRespose)
+        return findById.map(irspm::InvoiceToInvoiceResponse) // Cambiar a InvoiceToInvoiceResponse
                 .orElseThrow(() -> new BusinessRuleException("NO_FOUND", "There are no elements", HttpStatus.NOT_FOUND));
     }
 
@@ -80,7 +81,7 @@ public class InvoiceRestController {
         if (findAll.isEmpty()) {
             throw new BusinessRuleException("NO_FOUND", "There are no elements", HttpStatus.NOT_FOUND);
         }
-        return findAll.map(irspm::InvoiceToInvoiceRespose);
+        return findAll.map(irspm::InvoiceToInvoiceResponse); // Cambiar a InvoiceToInvoiceResponse
     }
 
     @PutMapping("/{id}")
@@ -90,7 +91,7 @@ public class InvoiceRestController {
             Invoice dtoTransformed = irm.InvoiceRequestToInvoice(input);
             dtoTransformed.setId(dtoOptional.get().getId());
             Invoice dto = billingRepository.save(dtoTransformed);
-            return ResponseEntity.ok(irspm.InvoiceToInvoiceRespose(dto));
+            return ResponseEntity.ok(irspm.InvoiceToInvoiceResponse(dto)); // Cambiar a InvoiceToInvoiceResponse
         } else {
             return ResponseEntity.notFound().build();
         }
@@ -99,8 +100,10 @@ public class InvoiceRestController {
     @PostMapping
     public ResponseEntity<?> post(@RequestBody InvoiceRequest input) {
         Invoice InvoiceRequestToInvoice = irm.InvoiceRequestToInvoice(input);
+        String id = UUID.randomUUID().toString();
+        InvoiceRequestToInvoice.setId(id);
         Invoice save = billingRepository.save(InvoiceRequestToInvoice);
-        InvoiceResponse dto = irspm.InvoiceToInvoiceRespose(save);
+        InvoiceResponse dto = irspm.InvoiceToInvoiceResponse(save); // Cambiar a InvoiceToInvoiceResponse
         return ResponseEntity.status(HttpStatus.CREATED).body(dto);
     }
 
@@ -113,5 +116,4 @@ public class InvoiceRestController {
         billingRepository.delete(dto.get());
         return ResponseEntity.ok().build();
     }
-
 }
