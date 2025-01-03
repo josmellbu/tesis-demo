@@ -29,7 +29,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build with Gradle Wrapper
-        run: ./gradlew build
+        run: ./gradlew test
 
       - name: Generate semantic version
         id: semver
@@ -58,7 +58,7 @@ jobs:
       
       - name: docker push 
         run: |
-          docker push ${{ secrets.DOCKER_USERNAME }}/python-fast-api:${{ steps.image.outputs.tag }}
+          docker push ${{ secrets.DOCKER_USERNAME }}/tesis-demo:${{ steps.image.outputs.tag }}
       
     outputs:
         image_tag: ${{ steps.image.outputs.tag }}
