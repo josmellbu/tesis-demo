@@ -1,7 +1,9 @@
 version: '3.8'
+
 services:
   mongodb:
     image: mongo:latest
+    container_name: mongodb
     environment:
       MONGO_INITDB_ROOT_USERNAME: user
       MONGO_INITDB_ROOT_PASSWORD: qwerty
@@ -11,6 +13,25 @@ services:
     volumes:
       - mongo-data:/data/db
       - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    networks:
+      - billing-network
+  billing-app:
+    build: .
+    container_name: billing-app
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_DATA_MONGODB_URI=mongodb://user:qwerty@mongodb:27017/billingapp_db
+      - APP_USER=admin
+      - SPRING_PROFILES_ACTIVE=prod
+    depends_on:
+      - mongodb
+    networks:
+      - billing-network
+
+networks:
+  billing-network:
+    driver: bridge
 
 volumes:
   mongo-data:
