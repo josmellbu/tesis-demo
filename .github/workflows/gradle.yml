@@ -58,10 +58,10 @@ jobs:
       
       - name: docker push 
         run: |
-          docker push ${{ secrets.DOCKER_USERNAME }}/tesis-demo:${{ steps.image.outputs.tag }}
+          docker push ${{ secrets.DOCKER_USERNAME }}/tesis-demo:${{ env.new_version }}
       
     outputs:
-        image_tag: ${{ steps.image.outputs.tag }}
+        image_tag: ${{ env.new_version }}
 
   # dependency-submission:
 
