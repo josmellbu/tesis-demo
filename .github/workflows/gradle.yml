@@ -34,38 +34,34 @@ jobs:
       - name: Generate semantic version
         id: semver
         run: |
-          # Verificar último tag en git
           latest_tag=$(git describe --tags --abbrev=0 || echo "0.0.0")
           echo "Último tag: $latest_tag"
-  
-          # Separar las partes del último tag
+
           IFS='.' read -r major minor patch <<<"${latest_tag//v/}"
-  
-          # Incrementar la versión de patch (puedes ajustarlo a major o minor si es necesario)
+
           patch=$((patch + 1))
           new_version="v$major.$minor.$patch"
   
           echo "Nuevo tag: $new_version"
-  
-          # Exportar como output para usar más adelante
+
           echo "new_version=$new_version" >> $GITHUB_ENV
 
-    #   - name: docker build 
-    #     run: |
-    #       docker build -t ${{ secrets.DOCKER_USERNAME }}/tesis-demo:${{ steps.image.outputs.tag }} .
+      - name: docker build 
+        run: |
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/tesis-demo:${{ env.new_version }} .
 
-    #   - name: Docker Login
-    #     uses: docker/login-action@v3.3.0
-    #     with:
-    #       username: ${{ secrets.DOCKER_USERNAME }}
-    #       password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Docker Login
+        uses: docker/login-action@v3.3.0
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
       
-    #   - name: docker push 
-    #     run: |
-    #       docker push ${{ secrets.DOCKER_USERNAME }}/python-fast-api:${{ steps.image.outputs.tag }}
+      - name: docker push 
+        run: |
+          docker push ${{ secrets.DOCKER_USERNAME }}/python-fast-api:${{ steps.image.outputs.tag }}
       
-    # outputs:
-    #     image_tag: ${{ steps.image.outputs.tag }}
+    outputs:
+        image_tag: ${{ steps.image.outputs.tag }}
 
   # dependency-submission:
 
