@@ -78,14 +78,14 @@ jobs:
       - name: Configure kubeconfig
         run: kubectl config current-context
 
-      - name: Deploy to Kubernetes
+      - name: Deploy with envsubst
         env:
-          IMAGE_TAG: ${{ needs.ci.outputs.image_tag }}
           DOCKERHUB_USER: ${{ secrets.DOCKER_USERNAME }}
+          IMAGE_TAG: ${{ needs.ci.outputs.image_tag }}
         run: |
-          export IMAGE="$DOCKERHUB_USER/tesis-demo:$IMAGE_TAG"
           envsubst < k8s/deployment.yaml | kubectl apply -f -
           kubectl apply -f k8s/service.yaml
+          kubectl rollout status deployment/tesis-demo
 
       - name: Rollout status
         run: kubectl rollout status deployment/tesis-demo

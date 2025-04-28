@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: tesis-demo
-        image: YOUR_DOCKERHUB_USER/tesis-demo:{{IMAGE_TAG}}
+        image: ${DOCKERHUB_USER}/tesis-demo:${IMAGE_TAG}
         ports:
         - containerPort: 8080
         env:
