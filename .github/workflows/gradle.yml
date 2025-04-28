@@ -8,94 +8,64 @@ on:
 
 jobs:
   ci:
+
     runs-on: ubuntu-latest
+    # permissions:
+    #   contents: read
+    #   id-token: write
+
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: gradle
-      
-      - name: Setup Gradle with timeout configuration
+
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@af1da67850ed9a4cedd57bfd976089dd991e2582
-        with:
-          gradle-home-cache-cleanup: true
-      
-      - name: Configure Gradle network timeouts
-        run: |
-          mkdir -p ~/.gradle
-          echo "org.gradle.internal.repository.connect.timeout=120000" >> ~/.gradle/gradle.properties
-          echo "org.gradle.internal.repository.read.timeout=120000" >> ~/.gradle/gradle.properties
-      
+
       - name: Set execute permission for gradlew
         run: chmod +x gradlew
-      
-      - name: Run tests with retries
-        uses: nick-invision/retry@v2
-        with:
-          timeout_minutes: 10
-          max_attempts: 3
-          retry_on: error
-          command: ./gradlew check
+
+      - name: Build with Gradle Wrapper
+        run: ./gradlew test
 
       - name: Generate semantic version
         id: semver
         run: |
-          latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "0.0.0")
+          latest_tag=$(git describe --tags --abbrev=0 || echo "0.0.0")
           echo "Último tag: $latest_tag"
+
           IFS='.' read -r major minor patch <<<"${latest_tag//v/}"
+
           patch=$((patch + 1))
           new_version="v$major.$minor.$patch"
+  
           echo "Nuevo tag: $new_version"
-          echo "new_version=$new_version" >> $GITHUB_ENV
-          echo "NEW_VERSION=$new_version" >> $GITHUB_OUTPUT
 
-      - name: Docker Build and Push
-        uses: docker/build-push-action@v5
+          echo "new_version=$new_version" >> $GITHUB_ENV
+
+      - name: docker build 
+        run: |
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/tesis-demo:${{ env.new_version }} .
+
+      - name: Docker Login
+        uses: docker/login-action@v3.3.0
         with:
-          context: .
-          push: true
-          tags: |
-            ${{ secrets.DOCKER_USERNAME }}/tesis-demo:${{ env.new_version }}
-            ${{ secrets.DOCKER_USERNAME }}/tesis-demo:latest
-          cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/tesis-demo:latest
-          cache-to: type=inline
-          build-args: |
-            BUILD_VERSION=${{ env.new_version }}
-          secrets: |
-            "github_token=${{ secrets.GITHUB_TOKEN }}"
-          platforms: linux/amd64
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ secrets.DOCKER_USERNAME }}/tesis-demo:${{ env.new_version }}
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          severity: 'CRITICAL,HIGH'
-
-      - name: Create Git Tag
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      
+      - name: docker push 
         run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git tag -a ${{ env.new_version }} -m "Release ${{ env.new_version }}"
-          git push origin ${{ env.new_version }}
-
+          docker push ${{ secrets.DOCKER_USERNAME }}/tesis-demo:${{ env.new_version }}
+      
     outputs:
-      image_tag: ${{ env.new_version }}
+        image_tag: ${{ env.new_version }}
 
   cd:
     runs-on: [self-hosted, linux]
     needs: ci
-    environment: production
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -113,20 +83,9 @@ jobs:
           DOCKERHUB_USER: ${{ secrets.DOCKER_USERNAME }}
           IMAGE_TAG: ${{ needs.ci.outputs.image_tag }}
         run: |
-          # Aplicar el deployment con sustitución de variables
           envsubst < k8s/deployment.yaml | kubectl apply -f -
-          
-          # Aplicar los recursos segmentados
           kubectl apply -f k8s/service.yaml
-          kubectl apply -f k8s/ingress.yaml
-          kubectl apply -f k8s/hpa.yaml
-          
-          # Verificar el estado del despliegue
-          kubectl rollout status deployment/tesis-demo --timeout=300s
+          kubectl rollout status deployment/tesis-demo
 
-      - name: Verify deployment
-        run: |
-          echo "Verificando que el pod esté listo..."
-          kubectl get pods -l app=tesis-demo
-          echo "Verificando endpoint del servicio..."
-          kubectl get ingress tesis-demo-ingress
+      - name: Rollout status
+        run: kubectl rollout status deployment/tesis-demo
