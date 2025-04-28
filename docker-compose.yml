@@ -4,9 +4,10 @@ services:
   mongodb:
     image: mongo:latest
     container_name: mongodb
+    restart: unless-stopped
     environment:
-      MONGO_INITDB_ROOT_USERNAME: user
-      MONGO_INITDB_ROOT_PASSWORD: qwerty
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-user}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-qwerty}
       MONGO_INITDB_DATABASE: billingapp_db
     ports:
       - "27017:27017"
@@ -15,19 +16,49 @@ services:
       - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
     networks:
       - billing-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/billingapp_db --quiet
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   billing-app:
-    build: .
+    build: 
+      context: .
+      args:
+        - BUILD_VERSION=${BUILD_VERSION:-dev}
+    image: ${DOCKER_USERNAME:-local}/tesis-demo:${BUILD_VERSION:-latest}
     container_name: billing-app
+    restart: unless-stopped
     ports:
       - "8080:8080"
     environment:
-      - SPRING_DATA_MONGODB_URI=mongodb://user:qwerty@mongodb:27017/billingapp_db
-      - APP_USER=admin
-      - SPRING_PROFILES_ACTIVE=prod
+      - SPRING_DATA_MONGODB_URI=mongodb://${MONGO_USER:-user}:${MONGO_PASSWORD:-qwerty}@mongodb:27017/billingapp_db
+      - APP_USER=${APP_USER:-admin}
+      - SPRING_PROFILES_ACTIVE=${PROFILE:-prod}
+      - JAVA_OPTS=-XX:+UseContainerSupport -XX:MaxRAMPercentage=70
     depends_on:
-      - mongodb
+      mongodb:
+        condition: service_healthy
     networks:
       - billing-network
+    healthcheck:
+      test: curl -f http://localhost:8080/actuator/health || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 networks:
   billing-network:
