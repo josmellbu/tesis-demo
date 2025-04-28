@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tesis-demo
+  labels:
+    app: tesis-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tesis-demo
+  template:
+    metadata:
+      labels:
+        app: tesis-demo
+    spec:
+      containers:
+      - name: tesis-demo
+        image: ${DOCKERHUB_USER}/tesis-demo:${IMAGE_TAG}
+        ports:
+        - containerPort: 8080
+        env:
+        - name: MONGO_HOST
+          value: mongo-service.default.svc.cluster.local
+        - name: MONGO_PORT
+          value: "27017"
+        - name: MONGO_DB
+          value: billingapp_db
+        - name: MONGO_USER
+          valueFrom:
+            secretKeyRef:
+              name: mongo-secret
+              key: mongo-root-username
+        - name: MONGO_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mongo-secret
+              key: mongo-root-password
