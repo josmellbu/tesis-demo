@@ -83,9 +83,8 @@ jobs:
           IMAGE_TAG: ${{ needs.ci.outputs.image_tag }}
           DOCKERHUB_USER: ${{ secrets.DOCKER_USERNAME }}
         run: |
-          # Reemplazamos el tag en los manifests y aplicamos
-          sed -i "s|${DOCKERHUB_USER}/tesis-demo:.*|${DOCKERHUB_USER}/tesis-demo:${IMAGE_TAG}|g" k8s/deployment.yaml
-          kubectl apply -f k8s/deployment.yaml
+          export IMAGE="$DOCKERHUB_USER/tesis-demo:$IMAGE_TAG"
+          envsubst < k8s/deployment.yaml | kubectl apply -f -
           kubectl apply -f k8s/service.yaml
 
       - name: Rollout status
