@@ -1,4 +1,4 @@
-name: Java CI/CD with Gradle - Performance Metrics
+name: Java CI/CD with Gradle
 
 on:
   push:
@@ -6,26 +6,16 @@ on:
   pull_request:
     branches: [ "main" ]
 
-env:
-  WORKFLOW_START_TIME: ${{ github.event.head_commit.timestamp }}
-
 jobs:
   ci:
+
     runs-on: ubuntu-latest
-    outputs:
-      image_tag: ${{ env.new_version }}
-      ci_duration: ${{ steps.ci_metrics.outputs.ci_duration }}
-      build_duration: ${{ steps.ci_metrics.outputs.build_duration }}
-      test_duration: ${{ steps.ci_metrics.outputs.test_duration }}
-      docker_build_duration: ${{ steps.ci_metrics.outputs.docker_build_duration }}
+    # permissions:
+    #   contents: read
+    #   id-token: write
 
     steps:
-      - name: Record CI start time
-        id: ci_start
-        run: echo "start_time=$(date +%s)" >> $GITHUB_OUTPUT
-
       - uses: actions/checkout@v4
-      
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -38,54 +28,27 @@ jobs:
       - name: Set execute permission for gradlew
         run: chmod +x gradlew
 
-      # Métricas de Build y Test
-      - name: Build and Test with Metrics
-        id: build_test
-        run: |
-          echo "build_start=$(date +%s)" >> $GITHUB_OUTPUT
-          
-          # Ejecutar tests con reporte detallado
-          ./gradlew test --info --build-cache > build_output.log 2>&1
-          
-          echo "build_end=$(date +%s)" >> $GITHUB_OUTPUT
-          
-          # Extraer métricas de tests
-          if [ -f build/test-results/test/TEST-*.xml ]; then
-            TEST_COUNT=$(grep -o 'tests="[^"]*"' build/test-results/test/TEST-*.xml | cut -d'"' -f2 | awk '{sum+=$1} END {print sum}')
-            FAILURE_COUNT=$(grep -o 'failures="[^"]*"' build/test-results/test/TEST-*.xml | cut -d'"' -f2 | awk '{sum+=$1} END {print sum}')
-            echo "test_count=$TEST_COUNT" >> $GITHUB_OUTPUT
-            echo "failure_count=$FAILURE_COUNT" >> $GITHUB_OUTPUT
-          fi
-
-      # Métricas de imagen Docker
-      - name: Docker Build with Metrics
-        id: docker_build
-        run: |
-          echo "docker_start=$(date +%s)" >> $GITHUB_OUTPUT
-          
-          # Build de imagen con métricas
-          docker build -t temp-image . --progress=plain > docker_build.log 2>&1
-          
-          echo "docker_end=$(date +%s)" >> $GITHUB_OUTPUT
-          
-          # Métricas de imagen
-          IMAGE_SIZE=$(docker images temp-image --format "table {{.Size}}" | tail -n +2 | head -1)
-          echo "image_size=$IMAGE_SIZE" >> $GITHUB_OUTPUT
+      - name: Build with Gradle Wrapper
+        run: ./gradlew test
 
       - name: Generate semantic version
         id: semver
         run: |
           latest_tag=$(git describe --tags --abbrev=0 || echo "0.0.0")
           echo "Último tag: $latest_tag"
+
           IFS='.' read -r major minor patch <<<"${latest_tag//v/}"
+
           patch=$((patch + 1))
           new_version="v$major.$minor.$patch"
+  
           echo "Nuevo tag: $new_version"
+
           echo "new_version=$new_version" >> $GITHUB_ENV
 
-      - name: Docker tag and login
+      - name: docker build 
         run: |
-          docker tag temp-image ${{ secrets.DOCKER_USERNAME }}/tesis-demo:${{ env.new_version }}
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/tesis-demo:${{ env.new_version }} .
 
       - name: Docker Login
         uses: docker/login-action@v3.3.0
@@ -93,56 +56,17 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
       
-      - name: Docker Push with Metrics
-        id: docker_push
+      - name: docker push 
         run: |
-          echo "push_start=$(date +%s)" >> $GITHUB_OUTPUT
           docker push ${{ secrets.DOCKER_USERNAME }}/tesis-demo:${{ env.new_version }}
-          echo "push_end=$(date +%s)" >> $GITHUB_OUTPUT
-
-      # Calcular métricas finales del CI
-      - name: Calculate CI Metrics
-        id: ci_metrics
-        run: |
-          CI_START=${{ steps.ci_start.outputs.start_time }}
-          BUILD_START=${{ steps.build_test.outputs.build_start }}
-          BUILD_END=${{ steps.build_test.outputs.build_end }}
-          DOCKER_START=${{ steps.docker_build.outputs.docker_start }}
-          DOCKER_END=${{ steps.docker_build.outputs.docker_end }}
-          PUSH_START=${{ steps.docker_push.outputs.push_start }}
-          PUSH_END=${{ steps.docker_push.outputs.push_end }}
-          CI_END=$(date +%s)
-          
-          echo "ci_duration=$((CI_END - CI_START))" >> $GITHUB_OUTPUT
-          echo "build_duration=$((BUILD_END - BUILD_START))" >> $GITHUB_OUTPUT
-          echo "test_duration=$((BUILD_END - BUILD_START))" >> $GITHUB_OUTPUT
-          echo "docker_build_duration=$((DOCKER_END - DOCKER_START))" >> $GITHUB_OUTPUT
-          echo "docker_push_duration=$((PUSH_END - PUSH_START))" >> $GITHUB_OUTPUT
-
-      # Guardar métricas como artifacts
-      - name: Upload Build Logs
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-logs
-          path: |
-            build_output.log
-            docker_build.log
-            build/reports/tests/test/
-          retention-days: 30
+      
+    outputs:
+        image_tag: ${{ env.new_version }}
 
   cd:
     runs-on: [self-hosted, linux]
     needs: ci
-    outputs:
-      cd_duration: ${{ steps.cd_metrics.outputs.cd_duration }}
-      deployment_duration: ${{ steps.cd_metrics.outputs.deployment_duration }}
-      rollout_duration: ${{ steps.cd_metrics.outputs.rollout_duration }}
-
     steps:
-      - name: Record CD start time
-        id: cd_start
-        run: echo "start_time=$(date +%s)" >> $GITHUB_OUTPUT
-
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -154,122 +78,14 @@ jobs:
       - name: Configure kubeconfig
         run: kubectl config current-context
 
-      # Deployment con métricas
-      - name: Deploy with Metrics
-        id: deploy
+      - name: Deploy with envsubst
         env:
           DOCKERHUB_USER: ${{ secrets.DOCKER_USERNAME }}
           IMAGE_TAG: ${{ needs.ci.outputs.image_tag }}
         run: |
-          echo "deploy_start=$(date +%s)" >> $GITHUB_OUTPUT
-          
-          # Aplicar deployment
           envsubst < k8s/deployment.yaml | kubectl apply -f -
           kubectl apply -f k8s/service.yaml
-          
-          echo "deploy_end=$(date +%s)" >> $GITHUB_OUTPUT
+          kubectl rollout status deployment/tesis-demo
 
-      # Monitoreo del rollout con métricas
-      - name: Monitor Rollout with Metrics
-        id: rollout
-        run: |
-          echo "rollout_start=$(date +%s)" >> $GITHUB_OUTPUT
-          
-          # Monitorear rollout con timeout
-          kubectl rollout status deployment/tesis-demo --timeout=300s
-          
-          echo "rollout_end=$(date +%s)" >> $GITHUB_OUTPUT
-          
-          # Obtener métricas del pod
-          POD_NAME=$(kubectl get pods -l app=tesis-demo -o jsonpath='{.items[0].metadata.name}')
-          kubectl describe pod $POD_NAME > pod_metrics.log
-          
-          # Métricas de recursos
-          kubectl top pod $POD_NAME > resource_metrics.log || echo "Metrics server not available"
-
-      # Verificación de salud de la aplicación
-      - name: Health Check with Metrics
-        id: health_check
-        run: |
-          echo "health_start=$(date +%s)" >> $GITHUB_OUTPUT
-          
-          # Obtener IP del servicio
-          SERVICE_IP=$(kubectl get service tesis-demo -o jsonpath='{.spec.clusterIP}')
-          
-          # Health check con reintentos
-          for i in {1..10}; do
-            if kubectl exec deployment/tesis-demo -- curl -f http://localhost:8080/actuator/health; then
-              echo "health_success_attempt=$i" >> $GITHUB_OUTPUT
-              break
-            fi
-            sleep 10
-          done
-          
-          echo "health_end=$(date +%s)" >> $GITHUB_OUTPUT
-
-      # Calcular métricas finales del CD
-      - name: Calculate CD Metrics
-        id: cd_metrics
-        run: |
-          CD_START=${{ steps.cd_start.outputs.start_time }}
-          DEPLOY_START=${{ steps.deploy.outputs.deploy_start }}
-          DEPLOY_END=${{ steps.deploy.outputs.deploy_end }}
-          ROLLOUT_START=${{ steps.rollout.outputs.rollout_start }}
-          ROLLOUT_END=${{ steps.rollout.outputs.rollout_end }}
-          HEALTH_START=${{ steps.health_check.outputs.health_start }}
-          HEALTH_END=${{ steps.health_check.outputs.health_end }}
-          CD_END=$(date +%s)
-          
-          echo "cd_duration=$((CD_END - CD_START))" >> $GITHUB_OUTPUT
-          echo "deployment_duration=$((DEPLOY_END - DEPLOY_START))" >> $GITHUB_OUTPUT
-          echo "rollout_duration=$((ROLLOUT_END - ROLLOUT_START))" >> $GITHUB_OUTPUT
-          echo "health_check_duration=$((HEALTH_END - HEALTH_START))" >> $GITHUB_OUTPUT
-
-      - name: Upload CD Logs
-        uses: actions/upload-artifact@v4
-        with:
-          name: cd-logs
-          path: |
-            pod_metrics.log
-            resource_metrics.log
-          retention-days: 30
-
-  # Job para recopilar y reportar métricas
-  metrics_summary:
-    runs-on: ubuntu-latest
-    needs: [ci, cd]
-    if: always()
-    
-    steps:
-      - name: Generate Metrics Summary
-        run: |
-          echo "# Pipeline Performance Metrics" > metrics_summary.md
-          echo "## Workflow Run: ${{ github.run_number }}" >> metrics_summary.md
-          echo "### Timestamp: $(date -u)" >> metrics_summary.md
-          echo "" >> metrics_summary.md
-          
-          echo "## CI Metrics" >> metrics_summary.md
-          echo "- Total CI Duration: ${{ needs.ci.outputs.ci_duration }} seconds" >> metrics_summary.md
-          echo "- Build Duration: ${{ needs.ci.outputs.build_duration }} seconds" >> metrics_summary.md
-          echo "- Docker Build Duration: ${{ needs.ci.outputs.docker_build_duration }} seconds" >> metrics_summary.md
-          echo "" >> metrics_summary.md
-          
-          echo "## CD Metrics" >> metrics_summary.md
-          echo "- Total CD Duration: ${{ needs.cd.outputs.cd_duration }} seconds" >> metrics_summary.md
-          echo "- Deployment Duration: ${{ needs.cd.outputs.deployment_duration }} seconds" >> metrics_summary.md
-          echo "- Rollout Duration: ${{ needs.cd.outputs.rollout_duration }} seconds" >> metrics_summary.md
-          echo "" >> metrics_summary.md
-          
-          # Calcular métricas totales
-          TOTAL_PIPELINE_TIME=$((${{ needs.ci.outputs.ci_duration }} + ${{ needs.cd.outputs.cd_duration }}))
-          echo "## Overall Pipeline Metrics" >> metrics_summary.md
-          echo "- Total Pipeline Duration: $TOTAL_PIPELINE_TIME seconds" >> metrics_summary.md
-          
-          cat metrics_summary.md
-
-      - name: Upload Metrics Summary
-        uses: actions/upload-artifact@v4
-        with:
-          name: metrics-summary
-          path: metrics_summary.md
-          retention-days: 90
+      - name: Rollout status
+        run: kubectl rollout status deployment/tesis-demo
