@@ -137,6 +137,10 @@ jobs:
       cd_duration: ${{ steps.cd_metrics.outputs.cd_duration }}
       deployment_duration: ${{ steps.cd_metrics.outputs.deployment_duration }}
       rollout_duration: ${{ steps.cd_metrics.outputs.rollout_duration }}
+      health_check_duration: ${{ steps.cd_metrics.outputs.health_check_duration }}
+      health_status: ${{ steps.health_check.outputs.health_status }}
+      health_success_attempt: ${{ steps.health_check.outputs.health_success_attempt }}
+      resource_metrics_available: ${{ steps.rollout.outputs.resource_metrics_available }}
 
     steps:
       - name: Record CD start time
@@ -182,10 +186,41 @@ jobs:
           
           # Obtener métricas del pod
           POD_NAME=$(kubectl get pods -l app=tesis-demo -o jsonpath='{.items[0].metadata.name}')
+          echo "Pod seleccionado: $POD_NAME"
+          
+          # Generar reporte detallado del pod
           kubectl describe pod $POD_NAME > pod_metrics.log
           
-          # Métricas de recursos
-          kubectl top pod $POD_NAME > resource_metrics.log || echo "Metrics server not available"
+          # Obtener logs del pod para análisis
+          kubectl logs $POD_NAME --tail=100 > pod_logs.log || echo "No se pudieron obtener logs"
+          
+          # Intentar obtener métricas de recursos si está disponible
+          if kubectl top pod $POD_NAME > resource_metrics.log 2>/dev/null; then
+            echo "Métricas de recursos obtenidas exitosamente"
+            echo "resource_metrics_available=true" >> $GITHUB_OUTPUT
+          else
+            echo "Metrics server no disponible - usando métricas alternativas" > resource_metrics.log
+            echo "resource_metrics_available=false" >> $GITHUB_OUTPUT
+            
+            # Métricas alternativas desde el describe del pod
+            echo "=== MÉTRICAS ALTERNATIVAS ===" >> resource_metrics.log
+            echo "Requests y Limits del contenedor:" >> resource_metrics.log
+            kubectl get pod $POD_NAME -o jsonpath='{.spec.containers[0].resources}' >> resource_metrics.log
+            echo "" >> resource_metrics.log
+            echo "Estado del pod:" >> resource_metrics.log
+            kubectl get pod $POD_NAME -o jsonpath='{.status.phase}' >> resource_metrics.log
+            echo "" >> resource_metrics.log
+            echo "Condiciones del pod:" >> resource_metrics.log
+            kubectl get pod $POD_NAME -o jsonpath='{.status.conditions}' >> resource_metrics.log
+          fi
+          
+          # Obtener información del servicio
+          echo "=== INFORMACIÓN DEL SERVICIO ===" > service_info.log
+          kubectl describe service tesis-demo >> service_info.log
+          
+          # Verificar endpoints
+          echo "=== ENDPOINTS ===" >> service_info.log
+          kubectl get endpoints tesis-demo >> service_info.log
 
       # Verificación de salud de la aplicación
       - name: Health Check with Metrics
@@ -193,15 +228,48 @@ jobs:
         run: |
           echo "health_start=$(date +%s)" >> $GITHUB_OUTPUT
           
-          # Obtener IP del servicio
-          SERVICE_IP=$(kubectl get service tesis-demo -o jsonpath='{.spec.clusterIP}')
+          # Obtener información del pod
+          POD_NAME=$(kubectl get pods -l app=tesis-demo -o jsonpath='{.items[0].metadata.name}')
+          echo "Pod name: $POD_NAME"
           
-          # Health check con reintentos
+          # Health check con reintentos (ahora sin autenticación ya que es público)
           for i in {1..10}; do
-            if kubectl exec deployment/tesis-demo -- curl -f http://localhost:8080/actuator/health; then
-              echo "health_success_attempt=$i" >> $GITHUB_OUTPUT
-              break
+            echo "Intento $i de health check..."
+            
+            # Verificar que el pod esté running
+            POD_STATUS=$(kubectl get pod $POD_NAME -o jsonpath='{.status.phase}')
+            echo "Pod status: $POD_STATUS"
+            
+            if [ "$POD_STATUS" = "Running" ]; then
+              # Verificar que el puerto esté disponible usando netstat
+              if kubectl exec $POD_NAME -- netstat -tlnp | grep :8080; then
+                echo "Puerto 8080 está disponible"
+                
+                # Health check sin autenticación (endpoint público ahora)
+                if kubectl exec $POD_NAME -- curl -f http://localhost:8080/actuator/health 2>/dev/null; then
+                  echo "Health check exitoso en intento $i"
+                  echo "health_success_attempt=$i" >> $GITHUB_OUTPUT
+                  echo "health_status=success" >> $GITHUB_OUTPUT
+                  
+                  # Obtener detalles del health check para métricas
+                  kubectl exec $POD_NAME -- curl -s http://localhost:8080/actuator/health | tee health_response.json || true
+                  break
+                else
+                  echo "Health check falló - endpoint retornó error"
+                fi
+              else
+                echo "Puerto 8080 no está disponible aún"
+              fi
+            else
+              echo "Pod no está en estado Running: $POD_STATUS"
             fi
+            
+            if [ $i -eq 10 ]; then
+              echo "Health check falló después de 10 intentos"
+              echo "health_success_attempt=0" >> $GITHUB_OUTPUT
+              echo "health_status=failed" >> $GITHUB_OUTPUT
+            fi
+            
             sleep 10
           done
           
@@ -232,6 +300,9 @@ jobs:
           path: |
             pod_metrics.log
             resource_metrics.log
+            pod_logs.log
+            service_info.log
+            health_response.json
           retention-days: 30
 
   # Job para recopilar y reportar métricas
@@ -258,12 +329,17 @@ jobs:
           echo "- Total CD Duration: ${{ needs.cd.outputs.cd_duration }} seconds" >> metrics_summary.md
           echo "- Deployment Duration: ${{ needs.cd.outputs.deployment_duration }} seconds" >> metrics_summary.md
           echo "- Rollout Duration: ${{ needs.cd.outputs.rollout_duration }} seconds" >> metrics_summary.md
+          echo "- Health Check Duration: ${{ needs.cd.outputs.health_check_duration }} seconds" >> metrics_summary.md
+          echo "- Health Check Status: ${{ needs.cd.outputs.health_status || 'unknown' }}" >> metrics_summary.md
+          echo "- Health Check Success Attempt: ${{ needs.cd.outputs.health_success_attempt || '0' }}" >> metrics_summary.md
+          echo "- Resource Metrics Available: ${{ needs.cd.outputs.resource_metrics_available || 'false' }}" >> metrics_summary.md
           echo "" >> metrics_summary.md
           
           # Calcular métricas totales
           TOTAL_PIPELINE_TIME=$((${{ needs.ci.outputs.ci_duration }} + ${{ needs.cd.outputs.cd_duration }}))
           echo "## Overall Pipeline Metrics" >> metrics_summary.md
           echo "- Total Pipeline Duration: $TOTAL_PIPELINE_TIME seconds" >> metrics_summary.md
+          echo "- Pipeline Success: ${{ needs.cd.result == 'success' && needs.ci.result == 'success' }}" >> metrics_summary.md
           
           cat metrics_summary.md
 

@@ -3,7 +3,6 @@ package com.example.billing.common;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.stream.Stream;
-
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.Customizer;
@@ -23,7 +22,8 @@ import org.springframework.web.cors.CorsConfiguration;
 @Configuration
 @EnableWebSecurity
 public class SecurityConfiguration {
-
+    
+    // Agregadas las rutas del actuator para health checks
     private static final String[] NO_AUTH_LIST = {
         "*/api-docs/**",
         "/swagger-ui/**",
@@ -31,7 +31,12 @@ public class SecurityConfiguration {
         "/swagger-resources",
         "/configuration/security",
         "/webjars/**",
-        "/login"};
+        "/login",
+        // Agregando endpoints del actuator para health checks
+        "/actuator/health/**",
+        "/actuator/health",
+        "/actuator/info"
+    };
 
     @Bean
     public UserDetailsService users() {
@@ -40,12 +45,13 @@ public class SecurityConfiguration {
                 .password(passwordEncoder().encode("qwerty"))
                 .roles("USER")
                 .build();
-
+        
         UserDetails admin = User.builder()
                 .username("admin")
                 .password(passwordEncoder().encode("admin"))
                 .roles("USER", "ADMIN")
                 .build();
+        
         return new InMemoryUserDetailsManager(user, admin);
     }
 
@@ -57,19 +63,20 @@ public class SecurityConfiguration {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                .httpBasic(Customizer.withDefaults())
-                .formLogin(form -> form
-                    .defaultSuccessUrl("/swagger-ui/index.html", true) // Redirigir a Swagger después del inicio de sesión exitoso
-                    .permitAll()) // Permitir acceso a la página de inicio de sesión
-                .authorizeHttpRequests((authz) -> {
-                    authz.requestMatchers(Stream.of(NO_AUTH_LIST)
-                            .map(AntPathRequestMatcher::new)
-                            .toArray(AntPathRequestMatcher[]::new))
-                            .permitAll();
-                    authz.anyRequest().authenticated();
-                })
-                .csrf(csrf -> csrf.disable())
-                .cors(corsCustomizer());
+            .httpBasic(Customizer.withDefaults())
+            .formLogin(form -> form
+                .defaultSuccessUrl("/swagger-ui/index.html", true) // Redirigir a Swagger después del inicio de sesión exitoso
+                .permitAll()) // Permitir acceso a la página de inicio de sesión
+            .authorizeHttpRequests((authz) -> {
+                authz.requestMatchers(Stream.of(NO_AUTH_LIST)
+                        .map(AntPathRequestMatcher::new)
+                        .toArray(AntPathRequestMatcher[]::new))
+                    .permitAll();
+                authz.anyRequest().authenticated();
+            })
+            .csrf(csrf -> csrf.disable())
+            .cors(corsCustomizer());
+        
         return http.build();
     }
 
