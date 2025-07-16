@@ -164,14 +164,28 @@ jobs:
         env:
           DOCKERHUB_USER: ${{ secrets.DOCKER_USERNAME }}
           IMAGE_TAG: ${{ needs.ci.outputs.image_tag }}
+          ROLLOUT_TIMESTAMP: ${{ github.run_number }}-${{ github.sha }}
         run: |
           echo "deploy_start=$(date +%s)" >> $GITHUB_OUTPUT
           
-          # Aplicar deployment
+          # Verificar que la imagen nueva esté disponible en Docker Hub
+          echo "Verificando imagen: ${DOCKERHUB_USER}/tesis-demo:${IMAGE_TAG}"
+          docker pull ${DOCKERHUB_USER}/tesis-demo:${IMAGE_TAG} || echo "Warning: No se pudo hacer pull de la imagen"
+          
+          # Aplicar deployment con variables sustituidas
           envsubst < k8s/deployment.yaml | kubectl apply -f -
           kubectl apply -f k8s/service.yaml
           
+          # Forzar restart del deployment para asegurar que use la nueva imagen
+          kubectl rollout restart deployment/tesis-demo
+          
           echo "deploy_end=$(date +%s)" >> $GITHUB_OUTPUT
+          
+          # Mostrar información del deployment
+          echo "=== INFORMACIÓN DEL DEPLOYMENT ==="
+          kubectl describe deployment tesis-demo
+          echo "=== HISTORY DEL ROLLOUT ==="
+          kubectl rollout history deployment/tesis-demo
 
       # Monitoreo del rollout con métricas
       - name: Monitor Rollout with Metrics
