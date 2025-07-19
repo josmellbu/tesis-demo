@@ -1,4 +1,4 @@
-name: Java CI/CD with Gradle
+name: Java CI/CD with Gradle - Instrumented
 
 on:
   push:
@@ -6,16 +6,26 @@ on:
   pull_request:
     branches: [ "main" ]
 
+env:
+  METRICS_FILE: "pipeline-metrics.json"
+
 jobs:
   ci:
-
     runs-on: ubuntu-latest
-    # permissions:
-    #   contents: read
-    #   id-token: write
-
+    outputs:
+      image_tag: ${{ env.new_version }}
+      ci_metrics: ${{ steps.ci_summary.outputs.metrics }}
+    
     steps:
+      - name: Start CI Timer
+        id: ci_start
+        run: |
+          echo "ci_start_time=$(date +%s)" >> $GITHUB_ENV
+          echo "pipeline_start_time=$(date +%s)" >> $GITHUB_ENV
+          echo "🚀 CI Pipeline iniciado en: $(date)"
+
       - uses: actions/checkout@v4
+      
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -28,8 +38,46 @@ jobs:
       - name: Set execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Build with Gradle Wrapper
-        run: ./gradlew test
+      - name: Start Build Timer
+        run: echo "build_start_time=$(date +%s)" >> $GITHUB_ENV
+
+      - name: Build and Test with Gradle Wrapper
+        id: build_test
+        run: |
+          echo "📊 Iniciando build y tests..."
+          ./gradlew clean build test --continue --build-cache
+          
+          # Capturar métricas de cobertura si existe JaCoCo
+          if [ -f "build/reports/jacoco/test/jacocoTestReport.xml" ]; then
+            coverage=$(grep -o 'covered="[0-9]*"' build/reports/jacoco/test/jacocoTestReport.xml | head -1 | grep -o '[0-9]*')
+            total=$(grep -o 'missed="[0-9]*"' build/reports/jacoco/test/jacocoTestReport.xml | head -1 | grep -o '[0-9]*')
+            if [ ! -z "$coverage" ] && [ ! -z "$total" ]; then
+              coverage_percent=$(echo "scale=2; $coverage * 100 / ($coverage + $total)" | bc -l)
+              echo "test_coverage=$coverage_percent" >> $GITHUB_ENV
+            fi
+          else
+            echo "test_coverage=0" >> $GITHUB_ENV
+          fi
+
+      - name: Calculate Build Time
+        run: |
+          build_end_time=$(date +%s)
+          build_duration=$((build_end_time - build_start_time))
+          echo "build_duration=$build_duration" >> $GITHUB_ENV
+          echo "⏱️ Build completado en: ${build_duration} segundos"
+
+      - name: Analyze Test Results
+        run: |
+          # Contar tests ejecutados y fallidos
+          if [ -f "build/test-results/test/TEST-*.xml" ]; then
+            total_tests=$(grep -o 'tests="[0-9]*"' build/test-results/test/TEST-*.xml | grep -o '[0-9]*' | awk '{sum+=$1} END {print sum}')
+            failed_tests=$(grep -o 'failures="[0-9]*"' build/test-results/test/TEST-*.xml | grep -o '[0-9]*' | awk '{sum+=$1} END {print sum}')
+            echo "total_tests=${total_tests:-0}" >> $GITHUB_ENV
+            echo "failed_tests=${failed_tests:-0}" >> $GITHUB_ENV
+          else
+            echo "total_tests=0" >> $GITHUB_ENV
+            echo "failed_tests=0" >> $GITHUB_ENV
+          fi
 
       - name: Generate semantic version
         id: semver
@@ -38,17 +86,30 @@ jobs:
           echo "Último tag: $latest_tag"
 
           IFS='.' read -r major minor patch <<<"${latest_tag//v/}"
-
           patch=$((patch + 1))
           new_version="v$major.$minor.$patch"
-  
+          
           echo "Nuevo tag: $new_version"
-
           echo "new_version=$new_version" >> $GITHUB_ENV
 
-      - name: docker build 
+      - name: Start Docker Build Timer
+        run: echo "docker_start_time=$(date +%s)" >> $GITHUB_ENV
+
+      - name: Docker build 
         run: |
+          echo "🐳 Construyendo imagen Docker..."
           docker build -t ${{ secrets.DOCKER_USERNAME }}/tesis-demo:${{ env.new_version }} .
+          
+          # Obtener tamaño de la imagen
+          image_size=$(docker images ${{ secrets.DOCKER_USERNAME }}/tesis-demo:${{ env.new_version }} --format "{{.Size}}")
+          echo "image_size=$image_size" >> $GITHUB_ENV
+
+      - name: Calculate Docker Build Time
+        run: |
+          docker_end_time=$(date +%s)
+          docker_duration=$((docker_end_time - docker_start_time))
+          echo "docker_duration=$docker_duration" >> $GITHUB_ENV
+          echo "⏱️ Docker build completado en: ${docker_duration} segundos"
 
       - name: Docker Login
         uses: docker/login-action@v3.3.0
@@ -56,17 +117,76 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
       
-      - name: docker push 
+      - name: Start Docker Push Timer
+        run: echo "push_start_time=$(date +%s)" >> $GITHUB_ENV
+
+      - name: Docker push 
         run: |
+          echo "📤 Enviando imagen a registry..."
           docker push ${{ secrets.DOCKER_USERNAME }}/tesis-demo:${{ env.new_version }}
-      
-    outputs:
-        image_tag: ${{ env.new_version }}
+
+      - name: Calculate Docker Push Time
+        run: |
+          push_end_time=$(date +%s)
+          push_duration=$((push_end_time - push_start_time))
+          echo "push_duration=$push_duration" >> $GITHUB_ENV
+          echo "⏱️ Docker push completado en: ${push_duration} segundos"
+
+      - name: Calculate Total CI Time
+        run: |
+          ci_end_time=$(date +%s)
+          ci_duration=$((ci_end_time - ci_start_time))
+          echo "ci_duration=$ci_duration" >> $GITHUB_ENV
+          echo "⏱️ CI total completado en: ${ci_duration} segundos"
+
+      - name: Generate CI Metrics Summary
+        id: ci_summary
+        run: |
+          cat > ci-metrics.json << EOF
+          {
+            "timestamp": "$(date -Iseconds)",
+            "workflow_run_id": "${{ github.run_id }}",
+            "commit_sha": "${{ github.sha }}",
+            "branch": "${{ github.ref_name }}",
+            "ci_metrics": {
+              "build_duration_seconds": ${{ env.build_duration }},
+              "docker_build_duration_seconds": ${{ env.docker_duration }},
+              "docker_push_duration_seconds": ${{ env.push_duration }},
+              "total_ci_duration_seconds": ${{ env.ci_duration }},
+              "test_coverage_percent": ${{ env.test_coverage }},
+              "total_tests": ${{ env.total_tests }},
+              "failed_tests": ${{ env.failed_tests }},
+              "image_size": "${{ env.image_size }}",
+              "version": "${{ env.new_version }}"
+            }
+          }
+          EOF
+          
+          echo "📊 Métricas CI guardadas:"
+          cat ci-metrics.json
+          
+          # Comprimir métricas para output
+          metrics_json=$(cat ci-metrics.json | jq -c .)
+          echo "metrics=$metrics_json" >> $GITHUB_OUTPUT
+
+      - name: Upload CI Metrics
+        uses: actions/upload-artifact@v3
+        with:
+          name: ci-metrics-${{ github.run_id }}
+          path: ci-metrics.json
 
   cd:
     runs-on: [self-hosted, linux]
     needs: ci
+    outputs:
+      cd_metrics: ${{ steps.cd_summary.outputs.metrics }}
+    
     steps:
+      - name: Start CD Timer
+        run: |
+          echo "cd_start_time=$(date +%s)" >> $GITHUB_ENV
+          echo "🚀 CD Pipeline iniciado en: $(date)"
+
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -78,16 +198,178 @@ jobs:
       - name: Configure kubeconfig
         run: kubectl config current-context
 
+      - name: Start Deployment Timer
+        run: echo "deploy_start_time=$(date +%s)" >> $GITHUB_ENV
+
+      - name: Pre-deployment Health Check
+        run: |
+          echo "🔍 Verificando estado antes del despliegue..."
+          kubectl get pods -l app=tesis-demo -o wide || echo "No hay pods existentes"
+          echo "pre_deployment_pods=$(kubectl get pods -l app=tesis-demo --no-headers | wc -l)" >> $GITHUB_ENV
+
       - name: Deploy with envsubst
+        id: deployment
         env:
           DOCKERHUB_USER: ${{ secrets.DOCKER_USERNAME }}
           IMAGE_TAG: ${{ needs.ci.outputs.image_tag }}
         run: |
+          echo "🚀 Desplegando aplicación..."
           envsubst < k8s/deployment.yaml | kubectl apply -f -
           kubectl apply -f k8s/service.yaml
+          
           # Forzar restart del deployment
           kubectl rollout restart deployment/tesis-demo
-          kubectl rollout status deployment/tesis-demo
+          
+          # Monitorear el rollout con timeout
+          if kubectl rollout status deployment/tesis-demo --timeout=300s; then
+            echo "deployment_success=true" >> $GITHUB_ENV
+          else
+            echo "deployment_success=false" >> $GITHUB_ENV
+            exit 1
+          fi
 
-      - name: Rollout status
-        run: kubectl rollout status deployment/tesis-demo
+      - name: Calculate Deployment Time
+        run: |
+          deploy_end_time=$(date +%s)
+          deployment_duration=$((deploy_end_time - deploy_start_time))
+          echo "deployment_duration=$deployment_duration" >> $GITHUB_ENV
+          echo "⏱️ Deployment completado en: ${deployment_duration} segundos"
+
+      - name: Post-deployment Verification
+        run: |
+          echo "✅ Verificando estado post-despliegue..."
+          
+          # Verificar pods
+          kubectl get pods -l app=tesis-demo -o wide
+          ready_pods=$(kubectl get pods -l app=tesis-demo --field-selector=status.phase=Running --no-headers | wc -l)
+          echo "post_deployment_pods=$ready_pods" >> $GITHUB_ENV
+          
+          # Verificar servicios
+          kubectl get svc tesis-demo
+          
+          # Intentar health check si está disponible
+          service_ip=$(kubectl get svc tesis-demo -o jsonpath='{.status.loadBalancer.ingress[0].ip}' || echo "")
+          if [ ! -z "$service_ip" ]; then
+            echo "service_endpoint=$service_ip" >> $GITHUB_ENV
+          fi
+
+      - name: Calculate Total CD Time
+        run: |
+          cd_end_time=$(date +%s)
+          cd_duration=$((cd_end_time - cd_start_time))
+          echo "cd_duration=$cd_duration" >> $GITHUB_ENV
+          echo "⏱️ CD total completado en: ${cd_duration} segundos"
+
+      - name: Generate CD Metrics Summary
+        id: cd_summary
+        run: |
+          cat > cd-metrics.json << EOF
+          {
+            "timestamp": "$(date -Iseconds)",
+            "workflow_run_id": "${{ github.run_id }}",
+            "commit_sha": "${{ github.sha }}",
+            "branch": "${{ github.ref_name }}",
+            "cd_metrics": {
+              "deployment_duration_seconds": ${{ env.deployment_duration }},
+              "total_cd_duration_seconds": ${{ env.cd_duration }},
+              "deployment_success": ${{ env.deployment_success }},
+              "pre_deployment_pods": ${{ env.pre_deployment_pods }},
+              "post_deployment_pods": ${{ env.post_deployment_pods }},
+              "image_deployed": "${{ needs.ci.outputs.image_tag }}"
+            }
+          }
+          EOF
+          
+          echo "📊 Métricas CD guardadas:"
+          cat cd-metrics.json
+          
+          # Comprimir métricas para output
+          metrics_json=$(cat cd-metrics.json | jq -c .)
+          echo "metrics=$metrics_json" >> $GITHUB_OUTPUT
+
+      - name: Upload CD Metrics
+        uses: actions/upload-artifact@v3
+        with:
+          name: cd-metrics-${{ github.run_id }}
+          path: cd-metrics.json
+
+  metrics_consolidation:
+    runs-on: ubuntu-latest
+    needs: [ci, cd]
+    if: always()
+    
+    steps:
+      - name: Download CI Metrics
+        uses: actions/download-artifact@v3
+        with:
+          name: ci-metrics-${{ github.run_id }}
+          path: ./metrics
+
+      - name: Download CD Metrics
+        uses: actions/download-artifact@v3
+        with:
+          name: cd-metrics-${{ github.run_id }}
+          path: ./metrics
+        continue-on-error: true
+
+      - name: Consolidate Pipeline Metrics
+        run: |
+          pipeline_end_time=$(date +%s)
+          
+          # Leer métricas de CI
+          ci_metrics=$(cat ./metrics/ci-metrics.json)
+          
+          # Leer métricas de CD si existen
+          if [ -f "./metrics/cd-metrics.json" ]; then
+            cd_metrics=$(cat ./metrics/cd-metrics.json)
+          else
+            cd_metrics='{"cd_metrics": {"deployment_duration_seconds": 0, "total_cd_duration_seconds": 0, "deployment_success": false}}'
+          fi
+          
+          # Calcular tiempo total del pipeline
+          pipeline_start=$(echo '${{ env.pipeline_start_time }}' | grep -o '[0-9]*' || echo "0")
+          total_pipeline_duration=$((pipeline_end_time - pipeline_start))
+          
+          # Consolidar métricas
+          cat > consolidated-metrics.json << EOF
+          {
+            "pipeline_execution": {
+              "timestamp": "$(date -Iseconds)",
+              "workflow_run_id": "${{ github.run_id }}",
+              "commit_sha": "${{ github.sha }}",
+              "branch": "${{ github.ref_name }}",
+              "total_pipeline_duration_seconds": $total_pipeline_duration,
+              "ci_success": "${{ needs.ci.result }}",
+              "cd_success": "${{ needs.cd.result }}"
+            },
+            "ci_metrics": $(echo "$ci_metrics" | jq '.ci_metrics'),
+            "cd_metrics": $(echo "$cd_metrics" | jq '.cd_metrics')
+          }
+          EOF
+          
+          echo "📈 Métricas consolidadas del pipeline:"
+          cat consolidated-metrics.json | jq .
+
+      - name: Upload Consolidated Metrics
+        uses: actions/upload-artifact@v3
+        with:
+          name: consolidated-metrics-${{ github.run_id }}
+          path: consolidated-metrics.json
+
+      - name: Performance Summary
+        run: |
+          echo "## 📊 Resumen de Performance del Pipeline" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Extraer métricas clave
+          ci_duration=$(cat consolidated-metrics.json | jq '.ci_metrics.total_ci_duration_seconds')
+          cd_duration=$(cat consolidated-metrics.json | jq '.cd_metrics.total_cd_duration_seconds')
+          total_duration=$(cat consolidated-metrics.json | jq '.pipeline_execution.total_pipeline_duration_seconds')
+          
+          echo "| Métrica | Valor |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| ⏱️ Duración CI | ${ci_duration}s |" >> $GITHUB_STEP_SUMMARY
+          echo "| ⏱️ Duración CD | ${cd_duration}s |" >> $GITHUB_STEP_SUMMARY
+          echo "| ⏱️ Duración Total | ${total_duration}s |" >> $GITHUB_STEP_SUMMARY
+          echo "| ✅ Estado CI | ${{ needs.ci.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ✅ Estado CD | ${{ needs.cd.result }} |" >> $GITHUB_STEP_SUMMARY
