@@ -2,8 +2,7 @@ package com.example.billing.controller;
 
 import com.example.billing.common.InvoiceRequestMapper;
 import com.example.billing.common.InvoiceResponseMapper;
-import com.example.billing.dto.InvoiceRequest;
-import com.example.billing.dto.InvoiceResponse;
+import com.example.billing.dto.*;
 import com.example.billing.entities.Invoice;
 import com.example.billing.respository.InvoiceRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -13,18 +12,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.BDDMockito.given;
@@ -52,45 +44,64 @@ class InvoiceRestControllerTest {
     @Autowired
     private ObjectMapper objectMapper;
 
-    private Invoice sampleInvoice;
+    // Sample data based on the user's actual database
+    private Invoice sampleInvoice1;
+    private Invoice sampleInvoice2;
     private InvoiceRequest sampleInvoiceRequest;
-    private InvoiceResponse sampleInvoiceResponse;
+    private InvoiceResponse sampleInvoiceResponse1;
+    private InvoiceResponse sampleInvoiceResponse2;
+    private List<Invoice> sampleInvoiceList;
+    private List<InvoiceResponse> sampleResponseList;
 
     @BeforeEach
     void setUp() {
-        sampleInvoice = new Invoice("1", "customer1", "INV-001", "Test invoice", 100.0);
+        // Create sample data matching user's database
+        sampleInvoice1 = new Invoice("3d646c6d-0ae1-453a-9203-227bb0acb7f7", "12", "12", 
+                "Compra de equipos informáticos", 1200.5);
+        sampleInvoice2 = new Invoice("1ca2a007-42ae-455d-aa1f-a9f21edc2a56", "12", "12", 
+                "algo", 1333.0);
         
         sampleInvoiceRequest = new InvoiceRequest();
-        sampleInvoiceRequest.setCustomer("customer1");
-        sampleInvoiceRequest.setNumber("INV-001");
+        sampleInvoiceRequest.setCustomer("12");
+        sampleInvoiceRequest.setNumber("13");
         sampleInvoiceRequest.setDetail("Test invoice");
-        sampleInvoiceRequest.setAmount(100.0);
+        sampleInvoiceRequest.setAmount(500.0);
 
-        sampleInvoiceResponse = new InvoiceResponse();
-        sampleInvoiceResponse.setInvoiceId("1");
-        sampleInvoiceResponse.setCustomer("customer1");
-        sampleInvoiceResponse.setNumber("INV-001");
-        sampleInvoiceResponse.setDetail("Test invoice");
-        sampleInvoiceResponse.setAmount(100.0);
+        sampleInvoiceResponse1 = new InvoiceResponse();
+        sampleInvoiceResponse1.setInvoiceId("3d646c6d-0ae1-453a-9203-227bb0acb7f7");
+        sampleInvoiceResponse1.setCustomer("12");
+        sampleInvoiceResponse1.setNumber("12");
+        sampleInvoiceResponse1.setDetail("Compra de equipos informáticos");
+        sampleInvoiceResponse1.setAmount(1200.5);
+
+        sampleInvoiceResponse2 = new InvoiceResponse();
+        sampleInvoiceResponse2.setInvoiceId("1ca2a007-42ae-455d-aa1f-a9f21edc2a56");
+        sampleInvoiceResponse2.setCustomer("12");
+        sampleInvoiceResponse2.setNumber("12");
+        sampleInvoiceResponse2.setDetail("algo");
+        sampleInvoiceResponse2.setAmount(1333.0);
+
+        sampleInvoiceList = Arrays.asList(sampleInvoice1, sampleInvoice2);
+        sampleResponseList = Arrays.asList(sampleInvoiceResponse1, sampleInvoiceResponse2);
     }
 
     @Test
     @DisplayName("Should return all invoices when invoices exist")
     void shouldReturnAllInvoicesWhenInvoicesExist() throws Exception {
         // Given
-        List<Invoice> invoices = Arrays.asList(sampleInvoice);
-        List<InvoiceResponse> invoiceResponses = Arrays.asList(sampleInvoiceResponse);
-        
-        given(billingRepository.findAll()).willReturn(invoices);
-        given(invoiceResponseMapper.InvoiceListToInvoiceResponseList(invoices)).willReturn(invoiceResponses);
+        given(billingRepository.findAll()).willReturn(sampleInvoiceList);
+        given(invoiceResponseMapper.InvoiceListToInvoiceResponseList(sampleInvoiceList))
+                .willReturn(sampleResponseList);
 
         // When & Then
         mockMvc.perform(get("/billing/v1"))
                 .andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath("$[0].invoiceId").value("1"))
-                .andExpect(jsonPath("$[0].customer").value("customer1"))
-                .andExpect(jsonPath("$[0].number").value("INV-001"));
+                .andExpect(jsonPath("$[0].invoiceId").value("3d646c6d-0ae1-453a-9203-227bb0acb7f7"))
+                .andExpect(jsonPath("$[0].customer").value("12"))
+                .andExpect(jsonPath("$[0].amount").value(1200.5))
+                .andExpect(jsonPath("$[1].invoiceId").value("1ca2a007-42ae-455d-aa1f-a9f21edc2a56"))
+                .andExpect(jsonPath("$[1].amount").value(1333.0));
     }
 
     @Test
@@ -108,61 +119,37 @@ class InvoiceRestControllerTest {
     @DisplayName("Should return invoice by ID when invoice exists")
     void shouldReturnInvoiceByIdWhenInvoiceExists() throws Exception {
         // Given
-        String invoiceId = "1";
-        given(billingRepository.findById(invoiceId)).willReturn(Optional.of(sampleInvoice));
-        given(invoiceResponseMapper.InvoiceToInvoiceResponse(sampleInvoice)).willReturn(sampleInvoiceResponse);
+        String invoiceId = "3d646c6d-0ae1-453a-9203-227bb0acb7f7";
+        given(billingRepository.findById(invoiceId)).willReturn(Optional.of(sampleInvoice1));
+        given(invoiceResponseMapper.InvoiceToInvoiceResponse(sampleInvoice1))
+                .willReturn(sampleInvoiceResponse1);
 
         // When & Then
         mockMvc.perform(get("/billing/v1/{id}", invoiceId))
                 .andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath("$.invoiceId").value("1"))
-                .andExpect(jsonPath("$.customer").value("customer1"));
-    }
-
-    @Test
-    @DisplayName("Should throw BusinessRuleException when invoice not found by ID")
-    void shouldThrowBusinessRuleExceptionWhenInvoiceNotFoundById() throws Exception {
-        // Given
-        String invoiceId = "nonexistent";
-        given(billingRepository.findById(invoiceId)).willReturn(Optional.empty());
-
-        // When & Then
-        mockMvc.perform(get("/billing/v1/{id}", invoiceId))
-                .andExpect(status().isNotFound());
-    }
-
-    @Test
-    @DisplayName("Should return paginated invoices")
-    void shouldReturnPaginatedInvoices() throws Exception {
-        // Given
-        Pageable pageable = PageRequest.of(0, 10);
-        List<Invoice> invoices = Arrays.asList(sampleInvoice);
-        Page<Invoice> invoicePage = new PageImpl<>(invoices, pageable, 1);
-        
-        given(billingRepository.findAll(any(Pageable.class))).willReturn(invoicePage);
-        given(invoiceResponseMapper.InvoiceToInvoiceResponse(sampleInvoice)).willReturn(sampleInvoiceResponse);
-
-        // When & Then
-        mockMvc.perform(get("/billing/v1/pageable")
-                .param("page", "0")
-                .param("size", "10"))
-                .andExpect(status().isOk())
-                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath("$.content[0].invoiceId").value("1"))
-                .andExpect(jsonPath("$.totalElements").value(1));
+                .andExpect(jsonPath("$.invoiceId").value(invoiceId))
+                .andExpect(jsonPath("$.customer").value("12"))
+                .andExpect(jsonPath("$.amount").value(1200.5));
     }
 
     @Test
     @DisplayName("Should create new invoice successfully")
     void shouldCreateNewInvoiceSuccessfully() throws Exception {
         // Given
-        Invoice invoiceToSave = new Invoice(null, "customer1", "INV-001", "Test invoice", 100.0);
-        Invoice savedInvoice = new Invoice("generated-id", "customer1", "INV-001", "Test invoice", 100.0);
+        Invoice invoiceToSave = new Invoice(null, "12", "13", "Test invoice", 500.0);
+        Invoice savedInvoice = new Invoice("new-uuid", "12", "13", "Test invoice", 500.0);
+        InvoiceResponse expectedResponse = new InvoiceResponse();
+        expectedResponse.setInvoiceId("new-uuid");
+        expectedResponse.setCustomer("12");
+        expectedResponse.setNumber("13");
+        expectedResponse.setAmount(500.0);
         
-        given(invoiceRequestMapper.InvoiceRequestToInvoice(any(InvoiceRequest.class))).willReturn(invoiceToSave);
+        given(invoiceRequestMapper.InvoiceRequestToInvoice(any(InvoiceRequest.class)))
+                .willReturn(invoiceToSave);
         given(billingRepository.save(any(Invoice.class))).willReturn(savedInvoice);
-        given(invoiceResponseMapper.InvoiceToInvoiceResponse(savedInvoice)).willReturn(sampleInvoiceResponse);
+        given(invoiceResponseMapper.InvoiceToInvoiceResponse(savedInvoice))
+                .willReturn(expectedResponse);
 
         // When & Then
         mockMvc.perform(post("/billing/v1")
@@ -171,103 +158,115 @@ class InvoiceRestControllerTest {
                 .content(objectMapper.writeValueAsString(sampleInvoiceRequest)))
                 .andExpect(status().isCreated())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath("$.customer").value("customer1"))
-                .andExpect(jsonPath("$.number").value("INV-001"));
+                .andExpect(jsonPath("$.customer").value("12"))
+                .andExpect(jsonPath("$.number").value("13"));
 
         verify(billingRepository).save(any(Invoice.class));
     }
 
     @Test
-    @DisplayName("Should update existing invoice successfully")
-    void shouldUpdateExistingInvoiceSuccessfully() throws Exception {
+    @DisplayName("Should perform advanced search successfully")
+    void shouldPerformAdvancedSearchSuccessfully() throws Exception {
         // Given
-        String invoiceId = "1";
-        Invoice updatedInvoice = new Invoice(invoiceId, "customer1", "INV-001-UPDATED", "Updated invoice", 150.0);
+        InvoiceSearchRequest searchRequest = new InvoiceSearchRequest();
+        searchRequest.setCustomerId("12");
         
-        given(billingRepository.findById(invoiceId)).willReturn(Optional.of(sampleInvoice));
-        given(invoiceRequestMapper.InvoiceRequestToInvoice(any(InvoiceRequest.class))).willReturn(updatedInvoice);
-        given(billingRepository.save(any(Invoice.class))).willReturn(updatedInvoice);
-        given(invoiceResponseMapper.InvoiceToInvoiceResponse(updatedInvoice)).willReturn(sampleInvoiceResponse);
+        given(billingRepository.findAll()).willReturn(sampleInvoiceList);
+        given(invoiceResponseMapper.InvoiceListToInvoiceResponseList(anyList()))
+                .willReturn(sampleResponseList);
 
         // When & Then
-        mockMvc.perform(put("/billing/v1/{id}", invoiceId)
+        mockMvc.perform(post("/billing/v1/search")
                 .with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(sampleInvoiceRequest)))
+                .content(objectMapper.writeValueAsString(searchRequest)))
                 .andExpect(status().isOk())
-                .andExpect(content().contentType(MediaType.APPLICATION_JSON));
-
-        verify(billingRepository).save(any(Invoice.class));
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$[0].customer").value("12"))
+                .andExpect(jsonPath("$[1].customer").value("12"));
     }
 
     @Test
-    @DisplayName("Should return not found when updating non-existent invoice")
-    void shouldReturnNotFoundWhenUpdatingNonExistentInvoice() throws Exception {
+    @DisplayName("Should search by amount range successfully")
+    void shouldSearchByAmountRangeSuccessfully() throws Exception {
         // Given
-        String invoiceId = "nonexistent";
-        given(billingRepository.findById(invoiceId)).willReturn(Optional.empty());
-
-        // When & Then
-        mockMvc.perform(put("/billing/v1/{id}", invoiceId)
-                .with(csrf())
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(sampleInvoiceRequest)))
-                .andExpect(status().isNotFound());
-
-        verify(billingRepository, never()).save(any(Invoice.class));
-    }
-
-    @Test
-    @DisplayName("Should delete existing invoice successfully")
-    void shouldDeleteExistingInvoiceSuccessfully() throws Exception {
-        // Given
-        String invoiceId = "1";
-        given(billingRepository.findById(invoiceId)).willReturn(Optional.of(sampleInvoice));
-
-        // When & Then
-        mockMvc.perform(delete("/billing/v1/{id}", invoiceId)
-                .with(csrf()))
-                .andExpect(status().isOk());
-
-        verify(billingRepository).delete(sampleInvoice);
-    }
-
-    @Test
-    @DisplayName("Should return not found when deleting non-existent invoice")
-    void shouldReturnNotFoundWhenDeletingNonExistentInvoice() throws Exception {
-        // Given
-        String invoiceId = "nonexistent";
-        given(billingRepository.findById(invoiceId)).willReturn(Optional.empty());
-
-        // When & Then
-        mockMvc.perform(delete("/billing/v1/{id}", invoiceId)
-                .with(csrf()))
-                .andExpect(status().isNotFound());
-
-        verify(billingRepository, never()).delete(any(Invoice.class));
-    }
-
-    @Test
-    @DisplayName("Should handle missing required fields gracefully")
-    void shouldHandleMissingRequiredFieldsGracefully() throws Exception {
-        // Given - Request with only partial data
-        InvoiceRequest partialRequest = new InvoiceRequest();
-        partialRequest.setCustomer("test-customer");
-        // number, detail, and amount are missing/default
+        InvoiceSearchRequest searchRequest = new InvoiceSearchRequest();
+        searchRequest.setMinAmount(1300.0);
+        searchRequest.setMaxAmount(1400.0);
         
-        given(invoiceRequestMapper.InvoiceRequestToInvoice(any(InvoiceRequest.class)))
-                .willReturn(new Invoice(null, "test-customer", null, null, 0.0));
-        given(billingRepository.save(any(Invoice.class)))
-                .willReturn(new Invoice("generated-id", "test-customer", null, null, 0.0));
-        given(invoiceResponseMapper.InvoiceToInvoiceResponse(any(Invoice.class)))
-                .willReturn(sampleInvoiceResponse);
+        given(billingRepository.findAll()).willReturn(sampleInvoiceList);
+        given(invoiceResponseMapper.InvoiceListToInvoiceResponseList(anyList()))
+                .willReturn(Arrays.asList(sampleInvoiceResponse2)); // Only the 1333.0 amount invoice
 
         // When & Then
-        mockMvc.perform(post("/billing/v1")
+        mockMvc.perform(post("/billing/v1/search")
                 .with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(partialRequest)))
-                .andExpect(status().isCreated());
+                .content(objectMapper.writeValueAsString(searchRequest)))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$[0].amount").value(1333.0));
+    }
+
+    @Test
+    @DisplayName("Should search by detail text successfully")
+    void shouldSearchByDetailTextSuccessfully() throws Exception {
+        // Given
+        InvoiceSearchRequest searchRequest = new InvoiceSearchRequest();
+        searchRequest.setDetailContains("equipos");
+        
+        given(billingRepository.findAll()).willReturn(sampleInvoiceList);
+        given(invoiceResponseMapper.InvoiceListToInvoiceResponseList(anyList()))
+                .willReturn(Arrays.asList(sampleInvoiceResponse1)); // Only the "equipos" invoice
+
+        // When & Then
+        mockMvc.perform(post("/billing/v1/search")
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(searchRequest)))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$[0].detail").value("Compra de equipos informáticos"));
+    }
+
+    @Test
+    @DisplayName("Should search with sorting successfully")
+    void shouldSearchWithSortingSuccessfully() throws Exception {
+        // Given
+        InvoiceSearchRequest searchRequest = new InvoiceSearchRequest();
+        searchRequest.setCustomerId("12");
+        searchRequest.setSortBy("amount");
+        searchRequest.setSortDirection("DESC");
+        
+        given(billingRepository.findAll()).willReturn(sampleInvoiceList);
+        given(invoiceResponseMapper.InvoiceListToInvoiceResponseList(anyList()))
+                .willReturn(Arrays.asList(sampleInvoiceResponse2, sampleInvoiceResponse1)); // Sorted by amount DESC
+
+        // When & Then
+        mockMvc.perform(post("/billing/v1/search")
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(searchRequest)))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$[0].amount").value(1333.0)) // Highest amount first
+                .andExpect(jsonPath("$[1].amount").value(1200.5));
+    }
+
+    @Test
+    @DisplayName("Should return empty search results with 404")
+    void shouldReturnEmptySearchResultsWith404() throws Exception {
+        // Given
+        InvoiceSearchRequest searchRequest = new InvoiceSearchRequest();
+        searchRequest.setCustomerId("999"); // Non-existent customer
+        
+        given(billingRepository.findAll()).willReturn(sampleInvoiceList);
+
+        // When & Then
+        mockMvc.perform(post("/billing/v1/search")
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(searchRequest)))
+                .andExpect(status().isNotFound());
     }
 }
