@@ -23,7 +23,7 @@ public class StandarizedApiExceptionResponse {
 
 	@Schema(description = "A human-readable explanation of the error", name = "detail",
             required = true, example = "The user does not have the propertly persmissions to acces the "
-            + "resource, please contact with us https://sotobotero.com")
+            + "resource, please contact with us https://josmellbu.com")
     private String detail;
 
 	@Schema(description = "A URI that identifies the specific occurrence of the error", name = "detail",

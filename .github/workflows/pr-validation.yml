@@ -1,0 +1,148 @@
+# .github/workflows/pr-validation.yml
+name: 🧪 PR Validation - Tests Only
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    types: [opened, synchronize, reopened]
+
+jobs:
+  validation:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: ☕ Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: 🔧 Setup Gradle
+        uses: gradle/actions/setup-gradle@af1da67850ed9a4cedd57bfd976089dd991e2582
+
+      - name: 🔑 Set execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: 🔨 Build application
+        run: |
+          echo "🔨 Building application for validation..."
+          ./gradlew clean build -x test
+          echo "✅ Build successful!"
+
+      - name: 🧪 Run tests with coverage
+        run: |
+          echo "🧪 Running tests with coverage analysis..."
+          ./gradlew test jacocoTestReport
+          echo "✅ Tests completed!"
+
+      - name: 📊 Test Results and Coverage Summary
+        if: always()
+        run: |
+          echo "📊 PR Validation Results" >> $GITHUB_STEP_SUMMARY
+          echo "========================" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Extract basic test info
+          if [ -f "build/test-results/test/TEST-*.xml" ]; then
+            # Count total tests
+            total_tests=$(find build/test-results/test -name "*.xml" -exec grep -h 'tests="[0-9]*"' {} \; | grep -o 'tests="[0-9]*"' | grep -o '[0-9]*' | awk '{sum += $1} END {print sum}')
+            failed_tests=$(find build/test-results/test -name "*.xml" -exec grep -h 'failures="[0-9]*"' {} \; | grep -o 'failures="[0-9]*"' | grep -o '[0-9]*' | awk '{sum += $1} END {print sum}')
+            
+            if [ -z "$total_tests" ]; then total_tests=0; fi
+            if [ -z "$failed_tests" ]; then failed_tests=0; fi
+            
+            echo "### 🧪 Test Results" >> $GITHUB_STEP_SUMMARY
+            echo "- **Total Tests**: $total_tests" >> $GITHUB_STEP_SUMMARY
+            echo "- **Failed Tests**: $failed_tests" >> $GITHUB_STEP_SUMMARY
+            
+            if [ "$failed_tests" -eq 0 ]; then
+              echo "- **Status**: ✅ All tests passed" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "- **Status**: ❌ Some tests failed" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "### 🧪 Test Results" >> $GITHUB_STEP_SUMMARY
+            echo "- **Status**: ❌ No test results found" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Extract and display coverage information
+          if [ -f "build/reports/jacoco/test/jacocoTestReport.xml" ]; then
+            echo "### 📈 Test Coverage Analysis" >> $GITHUB_STEP_SUMMARY
+            
+            # Extract coverage data
+            missed=$(grep -o 'missed="[0-9]*"' build/reports/jacoco/test/jacocoTestReport.xml | head -1 | grep -o '[0-9]*')
+            covered=$(grep -o 'covered="[0-9]*"' build/reports/jacoco/test/jacocoTestReport.xml | head -1 | grep -o '[0-9]*')
+            
+            if [ -n "$missed" ] && [ -n "$covered" ]; then
+              total=$((missed + covered))
+              coverage_percentage=$((covered * 100 / total))
+              
+              echo "- **Current Coverage**: **${coverage_percentage}%**" >> $GITHUB_STEP_SUMMARY
+              echo "- **Lines Covered**: $covered" >> $GITHUB_STEP_SUMMARY
+              echo "- **Lines Missed**: $missed" >> $GITHUB_STEP_SUMMARY
+              echo "- **Total Lines**: $total" >> $GITHUB_STEP_SUMMARY
+              
+              # Coverage status with emojis
+              if [ "$coverage_percentage" -ge 80 ]; then
+                echo "- **Coverage Status**: 🟢 Excellent (≥80%)" >> $GITHUB_STEP_SUMMARY
+              elif [ "$coverage_percentage" -ge 70 ]; then
+                echo "- **Coverage Status**: 🟡 Good (≥70%)" >> $GITHUB_STEP_SUMMARY
+              elif [ "$coverage_percentage" -ge 60 ]; then
+                echo "- **Coverage Status**: 🟠 Fair (≥60%)" >> $GITHUB_STEP_SUMMARY
+              else
+                echo "- **Coverage Status**: 🔴 Needs Improvement (<60%)" >> $GITHUB_STEP_SUMMARY
+              fi
+              
+              # Show coverage in console as well
+              echo ""
+              echo "📈 COVERAGE REPORT"
+              echo "=================="
+              echo "Current Coverage: ${coverage_percentage}%"
+              echo "Lines Covered: $covered"
+              echo "Lines Missed: $missed"
+              echo "Total Lines: $total"
+              echo "=================="
+              
+            else
+              echo "- **Coverage**: ⚠️ Could not parse coverage data" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "### 📈 Test Coverage Analysis" >> $GITHUB_STEP_SUMMARY
+            echo "- **Coverage**: ❌ Coverage report not generated" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🎯 PR Status" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f "build/test-results/test/TEST-*.xml" ] && [ "$failed_tests" -eq 0 ]; then
+            echo "✅ **Ready for merge** - All validation checks passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Not ready for merge** - Fix failing tests first" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📝 **Note**: This is validation only. Full CI/CD pipeline with metrics will run after merge to main." >> $GITHUB_STEP_SUMMARY
+
+      - name: 📋 Upload test reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-reports-${{ github.event.pull_request.number }}
+          path: |
+            build/reports/tests/test/
+            build/reports/jacoco/test/
+          retention-days: 7
+
+      - name: ✅ PR Validation Complete
+        run: |
+          echo "🎉 PR validation completed successfully!"
+          echo "✅ Build: PASSED"
+          echo "✅ Tests: PASSED"
+          echo "🚀 Ready for merge to main"

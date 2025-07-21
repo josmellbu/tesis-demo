@@ -38,6 +38,11 @@ dependencies {
     testImplementation 'de.flapdoodle.embed:de.flapdoodle.embed.mongo:4.9.2'
 }
 
+// *** AGREGADO: Configuración para preservar nombres de parámetros ***
+tasks.withType(JavaCompile) {
+    options.compilerArgs += ['-parameters']
+}
+
 // Configuración de JaCoCo
 jacoco {
     toolVersion = "0.8.10"
