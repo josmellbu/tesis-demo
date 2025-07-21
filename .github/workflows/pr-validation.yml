@@ -1,0 +1,83 @@
+name: 🧪 PR Validation - Tests Only
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    types: [opened, synchronize, reopened]
+
+jobs:
+  validation:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: ☕ Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: 🔧 Setup Gradle
+        uses: gradle/actions/setup-gradle@af1da67850ed9a4cedd57bfd976089dd991e2582
+
+      - name: 🔑 Set execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: 🔨 Build application
+        run: |
+          echo "🔨 Building application for validation..."
+          ./gradlew clean build -x test
+          echo "✅ Build successful!"
+
+      - name: 🧪 Run tests
+        run: |
+          echo "🧪 Running tests..."
+          ./gradlew test jacocoTestReport
+          echo "✅ Tests completed!"
+
+      - name: 📊 Test Results Summary
+        if: always()
+        run: |
+          echo "📊 Test Results Summary" >> $GITHUB_STEP_SUMMARY
+          echo "======================" >> $GITHUB_STEP_SUMMARY
+          
+          # Extract basic test info
+          if [ -f "build/test-results/test/TEST-*.xml" ]; then
+            echo "✅ Tests executed successfully" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ No test results found" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Extract coverage if available
+          if [ -f "build/reports/jacoco/test/jacocoTestReport.xml" ]; then
+            coverage=$(grep -o 'missed="[0-9]*"' build/reports/jacoco/test/jacocoTestReport.xml | head -1 | grep -o '[0-9]*')
+            covered=$(grep -o 'covered="[0-9]*"' build/reports/jacoco/test/jacocoTestReport.xml | head -1 | grep -o '[0-9]*')
+            if [ -n "$coverage" ] && [ -n "$covered" ]; then
+              total=$((coverage + covered))
+              test_coverage=$((covered * 100 / total))
+              echo "📈 Test Coverage: ${test_coverage}%" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🎯 **Status**: Ready for merge if all checks pass" >> $GITHUB_STEP_SUMMARY
+          echo "📝 **Note**: Full CI/CD with metrics will run after merge to main" >> $GITHUB_STEP_SUMMARY
+
+      - name: 📋 Upload test reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-reports-${{ github.event.pull_request.number }}
+          path: |
+            build/reports/tests/test/
+            build/reports/jacoco/test/
+          retention-days: 7
+
+      - name: ✅ PR Validation Complete
+        run: |
+          echo "🎉 PR validation completed successfully!"
+          echo "✅ Build: PASSED"
+          echo "✅ Tests: PASSED"
+          echo "🚀 Ready for merge to main"
