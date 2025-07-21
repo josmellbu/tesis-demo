@@ -303,4 +303,34 @@ class InvoiceRestControllerTest {
                 .param("size", "10"))
                 .andExpect(status().isNotFound());
     }
+
+    @Test
+    @DisplayName("Should get invoice statistics successfully")
+    void shouldGetInvoiceStatisticsSuccessfully() throws Exception {
+        // Given
+        given(billingRepository.findAll()).willReturn(sampleInvoiceList);
+
+        // When & Then
+        mockMvc.perform(get("/billing/v1/statistics"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.totalInvoices").value(2))
+                .andExpect(jsonPath("$.totalAmount").value(2533.5)) // 1200.5 + 1333
+                .andExpect(jsonPath("$.averageAmount").value(1266.75))
+                .andExpect(jsonPath("$.maxAmount").value(1333.0))
+                .andExpect(jsonPath("$.minAmount").value(1200.5))
+                .andExpect(jsonPath("$.uniqueCustomers").value(1))
+                .andExpect(jsonPath("$.customerInvoiceCounts.12").value(2));
+    }
+
+    @Test
+    @DisplayName("Should return 404 for statistics when no invoices")
+    void shouldReturn404ForStatisticsWhenNoInvoices() throws Exception {
+        // Given
+        given(billingRepository.findAll()).willReturn(Collections.emptyList());
+
+        // When & Then
+        mockMvc.perform(get("/billing/v1/statistics"))
+                .andExpect(status().isNotFound());
+    }
 }
