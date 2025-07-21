@@ -5,6 +5,7 @@ import com.example.billing.common.InvoiceResponseMapper;
 import com.example.billing.dto.InvoiceRequest;
 import com.example.billing.dto.InvoiceResponse;
 import com.example.billing.entities.Invoice;
+import com.example.billing.exception.BusinessRuleException;
 import com.example.billing.respository.InvoiceRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,6 +20,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.security.test.context.support.WithAnonymousUser;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.Arrays;
@@ -249,13 +251,25 @@ class InvoiceRestControllerTest {
     }
 
     @Test
-    @DisplayName("Should handle malformed request data")
-    void shouldHandleMalformedRequestData() throws Exception {
-        // Test with empty JSON object
+    @DisplayName("Should handle missing required fields gracefully")
+    void shouldHandleMissingRequiredFieldsGracefully() throws Exception {
+        // Given - Request with only partial data
+        InvoiceRequest partialRequest = new InvoiceRequest();
+        partialRequest.setCustomer("test-customer");
+        // number, detail, and amount are missing/default
+        
+        given(invoiceRequestMapper.InvoiceRequestToInvoice(any(InvoiceRequest.class)))
+                .willReturn(new Invoice(null, "test-customer", null, null, 0.0));
+        given(billingRepository.save(any(Invoice.class)))
+                .willReturn(new Invoice("generated-id", "test-customer", null, null, 0.0));
+        given(invoiceResponseMapper.InvoiceToInvoiceResponse(any(Invoice.class)))
+                .willReturn(sampleInvoiceResponse);
+
+        // When & Then
         mockMvc.perform(post("/billing/v1")
                 .with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{}"))
-                .andExpect(status().isCreated()); // Empty JSON is actually valid and will create with default values
+                .content(objectMapper.writeValueAsString(partialRequest)))
+                .andExpect(status().isCreated());
     }
 }
