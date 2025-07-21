@@ -171,9 +171,9 @@ public class InvoiceRestController {
     )
     @GetMapping("/customer/{customerId}")
     public Page<InvoiceResponse> getInvoicesByCustomer(
-            @Parameter(description = "Customer ID") @PathVariable String customerId,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size) throws BusinessRuleException {
+            @Parameter(description = "Customer ID") @PathVariable("customerId") String customerId,
+            @RequestParam(value = "page", defaultValue = "0") int page,
+            @RequestParam(value = "size", defaultValue = "10") int size) throws BusinessRuleException {
         
         List<Invoice> allInvoices = billingRepository.findAll();
         List<Invoice> customerInvoices = allInvoices.stream()
