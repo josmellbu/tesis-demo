@@ -5,7 +5,6 @@ import com.example.billing.common.InvoiceResponseMapper;
 import com.example.billing.dto.InvoiceRequest;
 import com.example.billing.dto.InvoiceResponse;
 import com.example.billing.entities.Invoice;
-import com.example.billing.exception.BusinessRuleException;
 import com.example.billing.respository.InvoiceRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,7 +19,6 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
-import org.springframework.security.test.context.support.WithAnonymousUser;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.Arrays;

@@ -19,7 +19,7 @@ import com.example.billing.enums.ExceptionType;
 
 
 /**
- * @author sotobotero
+ * @author josmellbuy
  * Standard http communication have five levels of response codes
  * 100-level (Informational) — Server acknowledges a request, it mean that request was received and understood, it is transient response , alert client for awaiting response
  * 200-level (Success) — Server completed the request as expected
