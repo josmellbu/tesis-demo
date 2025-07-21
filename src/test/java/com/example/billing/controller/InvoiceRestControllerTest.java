@@ -17,6 +17,7 @@ import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 import static org.mockito.BDDMockito.given;
@@ -78,5 +79,16 @@ class InvoiceRestControllerTest {
                 .andExpect(jsonPath("$[0].invoiceId").value("1"))
                 .andExpect(jsonPath("$[0].customer").value("customer1"))
                 .andExpect(jsonPath("$[0].number").value("INV-001"));
+    }
+
+    @Test
+    @DisplayName("Should throw BusinessRuleException when no invoices found")
+    void shouldThrowBusinessRuleExceptionWhenNoInvoicesFound() throws Exception {
+        // Given
+        given(billingRepository.findAll()).willReturn(Collections.emptyList());
+
+        // When & Then
+        mockMvc.perform(get("/billing/v1"))
+                .andExpect(status().isNotFound());
     }
 }
