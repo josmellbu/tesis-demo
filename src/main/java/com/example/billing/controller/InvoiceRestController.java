@@ -11,6 +11,7 @@ import com.example.billing.common.InvoiceRequestMapper;
 import com.example.billing.common.InvoiceResponseMapper;
 import com.example.billing.dto.InvoiceRequest;
 import com.example.billing.dto.InvoiceResponse;
+import com.example.billing.dto.InvoiceSearchRequest;
 import com.example.billing.entities.Invoice;
 import com.example.billing.exception.BusinessRuleException;
 import com.example.billing.respository.InvoiceRepository;
@@ -36,6 +37,8 @@ import org.springframework.data.domain.Pageable;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
+
 import org.springframework.data.domain.PageRequest;
 import org.springframework.web.bind.annotation.RequestParam;
 
@@ -125,5 +128,90 @@ public class InvoiceRestController {
         }
         billingRepository.delete(dto.get());
         return ResponseEntity.ok().build();
+    }
+
+    @Operation(
+        description = "Search invoices with advanced filtering capabilities",
+        summary = "Advanced search with multiple criteria"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Search results returned successfully"),
+        @ApiResponse(responseCode = "400", description = "Invalid search criteria"),
+        @ApiResponse(responseCode = "404", description = "No results found")
+    })
+    @PostMapping("/search")
+    public List<InvoiceResponse> searchInvoices(@RequestBody InvoiceSearchRequest searchRequest) throws BusinessRuleException {
+        List<Invoice> allInvoices = billingRepository.findAll();
+        List<Invoice> filteredInvoices = allInvoices.stream()
+            .filter(invoice -> matchesSearchCriteria(invoice, searchRequest))
+            .collect(Collectors.toList());
+        
+        if (searchRequest.getSortBy() != null) {
+            filteredInvoices = applySorting(filteredInvoices, searchRequest);
+        }
+        
+        if (searchRequest.getMaxResults() != null && searchRequest.getMaxResults() > 0) {
+            filteredInvoices = filteredInvoices.stream()
+                .limit(searchRequest.getMaxResults())
+                .collect(Collectors.toList());
+        }
+        
+        if (filteredInvoices.isEmpty()) {
+            throw new BusinessRuleException("NOT_FOUND", "No invoices match the search criteria", HttpStatus.NOT_FOUND);
+        }
+        
+        return irspm.InvoiceListToInvoiceResponseList(filteredInvoices);
+    }
+
+    private boolean matchesSearchCriteria(Invoice invoice, InvoiceSearchRequest searchRequest) {
+        if (searchRequest.getCustomerId() != null && !searchRequest.getCustomerId().isEmpty()) {
+            if (!searchRequest.getCustomerId().equals(invoice.getCustomerId())) {
+                return false;
+            }
+        } if (searchRequest.getInvoiceNumber() != null && !searchRequest.getInvoiceNumber().isEmpty()) {
+            if (invoice.getNumber() == null || !invoice.getNumber().toLowerCase().contains(searchRequest.getInvoiceNumber().toLowerCase())) {
+                return false;
+            }
+        } if (searchRequest.getMinAmount() != null && invoice.getAmount() < searchRequest.getMinAmount()) {
+            return false;
+        } if (searchRequest.getMaxAmount() != null && invoice.getAmount() > searchRequest.getMaxAmount()) {
+            return false;
+        } if (searchRequest.getDetailContains() != null && !searchRequest.getDetailContains().isEmpty()) {
+            if (invoice.getDetail() == null || !invoice.getDetail().toLowerCase().contains(searchRequest.getDetailContains().toLowerCase())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private List<Invoice> applySorting(List<Invoice> invoices, InvoiceSearchRequest request) {
+        if (request.getSortBy() == null) {
+            return invoices;
+        }
+        
+        java.util.Comparator<Invoice> comparator = getComparator(request.getSortBy());
+        
+        if ("DESC".equalsIgnoreCase(request.getSortDirection())) {
+            comparator = comparator.reversed();
+        }
+        
+        return invoices.stream()
+            .sorted(comparator)
+            .collect(Collectors.toList());
+    }
+
+    private java.util.Comparator<Invoice> getComparator(String sortBy) {
+        switch (sortBy.toLowerCase()) {
+            case "amount":
+                return java.util.Comparator.comparing(Invoice::getAmount);
+            case "number":
+                return java.util.Comparator.comparing(Invoice::getNumber, java.util.Comparator.nullsLast(String::compareTo));
+            case "customerid":
+                return java.util.Comparator.comparing(Invoice::getCustomerId);
+            case "detail":
+                return java.util.Comparator.comparing(Invoice::getDetail, java.util.Comparator.nullsLast(String::compareTo));
+            default:
+                return java.util.Comparator.comparing(Invoice::getId);
+        }
     }
 }
