@@ -269,4 +269,38 @@ class InvoiceRestControllerTest {
                 .content(objectMapper.writeValueAsString(searchRequest)))
                 .andExpect(status().isNotFound());
     }
+
+    @Test
+    @DisplayName("Should get invoices by customer successfully")
+    void shouldGetInvoicesByCustomerSuccessfully() throws Exception {
+        // Given
+        String customerId = "12";
+        given(billingRepository.findAll()).willReturn(sampleInvoiceList);
+        given(invoiceResponseMapper.InvoiceListToInvoiceResponseList(anyList()))
+                .willReturn(sampleResponseList);
+
+        // When & Then
+        mockMvc.perform(get("/billing/v1/customer/{customerId}", customerId)
+                .param("page", "0")
+                .param("size", "10"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.content[0].customer").value("12"))
+                .andExpect(jsonPath("$.content[1].customer").value("12"))
+                .andExpect(jsonPath("$.totalElements").value(2));
+    }
+
+    @Test
+    @DisplayName("Should return 404 for non-existent customer")
+    void shouldReturn404ForNonExistentCustomer() throws Exception {
+        // Given
+        String customerId = "999";
+        given(billingRepository.findAll()).willReturn(sampleInvoiceList);
+
+        // When & Then
+        mockMvc.perform(get("/billing/v1/customer/{customerId}", customerId)
+                .param("page", "0")
+                .param("size", "10"))
+                .andExpect(status().isNotFound());
+    }
 }
