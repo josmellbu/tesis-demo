@@ -27,11 +27,13 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpStatus;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 
 import java.util.Optional;
@@ -161,6 +163,34 @@ public class InvoiceRestController {
         }
         
         return irspm.InvoiceListToInvoiceResponseList(filteredInvoices);
+    }
+
+    @Operation(
+        description = "Get invoices by customer ID with pagination",
+        summary = "Retrieve all invoices for a specific customer"
+    )
+    @GetMapping("/customer/{customerId}")
+    public Page<InvoiceResponse> getInvoicesByCustomer(
+            @Parameter(description = "Customer ID") @PathVariable String customerId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) throws BusinessRuleException {
+        
+        List<Invoice> allInvoices = billingRepository.findAll();
+        List<Invoice> customerInvoices = allInvoices.stream()
+            .filter(invoice -> customerId.equals(invoice.getCustomerId()))
+            .collect(Collectors.toList());
+        
+        if (customerInvoices.isEmpty()) {
+            throw new BusinessRuleException("NOT_FOUND", "No invoices found for customer: " + customerId, HttpStatus.NOT_FOUND);
+        }
+        
+        Pageable pageable = PageRequest.of(page, size);
+        int start = page * size;
+        int end = Math.min(start + size, customerInvoices.size());
+        List<Invoice> pagedInvoices = customerInvoices.subList(start, end);
+        List<InvoiceResponse> responses = irspm.InvoiceListToInvoiceResponseList(pagedInvoices);
+        
+        return new PageImpl<>(responses, pageable, customerInvoices.size());
     }
 
     private boolean matchesSearchCriteria(Invoice invoice, InvoiceSearchRequest searchRequest) {
