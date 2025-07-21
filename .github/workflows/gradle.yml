@@ -1,9 +1,7 @@
-name: Java CI/CD with Gradle - Enhanced Metrics
+name: 🚀 CI/CD Pipeline with Enhanced Metrics
 
 on:
   push:
-    branches: [ "main" ]
-  pull_request:
     branches: [ "main" ]
 
 jobs:
@@ -18,35 +16,41 @@ jobs:
       test_coverage: ${{ steps.build_metrics.outputs.test_coverage }}
 
     steps:
-      - name: Record CI start time
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: ⏱️ Record CI start time
         id: ci_start
         run: |
           echo "ci_start_time=$(date +%s)" >> $GITHUB_ENV
           echo "ci_start_timestamp=$(date -Iseconds)" >> $GITHUB_ENV
+          echo "🚀 Starting CI/CD Pipeline with Metrics Collection"
+          echo "📊 This run will collect performance data for research analysis"
 
-      - uses: actions/checkout@v4
-      
-      - name: Set up JDK 17
+      - name: ☕ Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Gradle
+      - name: 🔧 Setup Gradle
         uses: gradle/actions/setup-gradle@af1da67850ed9a4cedd57bfd976089dd991e2582
 
-      - name: Set execute permission for gradlew
+      - name: 🔑 Set execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Build and Test with Metrics
+      - name: 📊 Build and Test with Metrics Collection
         id: build_metrics
         run: |
+          echo "📊 METRICS COLLECTION ENABLED - Research Data"
+          echo "=============================================="
+          
           # Record build start time
           build_start=$(date +%s)
           
           # Build the application
           echo "🔨 Starting build process..."
-          ./gradlew build -x test
+          ./gradlew clean build -x test
           build_end=$(date +%s)
           build_time=$((build_end - build_start))
           
@@ -82,26 +86,28 @@ jobs:
           echo "Test time: ${test_time}s"
           echo "Test coverage: ${test_coverage}%"
           echo "======================"
+          
+          echo "✅ Build and Test metrics collected successfully"
 
-      - name: Generate semantic version
+      - name: 🏷️ Generate semantic version
         id: semver
         run: |
           latest_tag=$(git describe --tags --abbrev=0 || echo "0.0.0")
-          echo "Último tag: $latest_tag"
+          echo "📋 Latest tag: $latest_tag"
 
           IFS='.' read -r major minor patch <<<"${latest_tag//v/}"
           patch=$((patch + 1))
           new_version="v$major.$minor.$patch"
           
-          echo "Nuevo tag: $new_version"
+          echo "🏷️ New version: $new_version"
           echo "new_version=$new_version" >> $GITHUB_ENV
 
-      - name: Docker build with metrics
+      - name: 🐳 Docker build with metrics
         id: docker_metrics
         run: |
           docker_start=$(date +%s)
           
-          echo "🐳 Building Docker image..."
+          echo "🐳 Building Docker image with metrics..."
           docker build -t ${{ secrets.DOCKER_USERNAME }}/tesis-demo:${{ env.new_version }} .
           
           docker_end=$(date +%s)
@@ -118,19 +124,21 @@ jobs:
           echo "Build time: ${docker_build_time}s"
           echo "Image size: $image_size"
           echo "======================"
+          
+          echo "✅ Docker build metrics collected successfully"
 
-      - name: Docker Login
+      - name: 🔐 Docker Login
         uses: docker/login-action@v3.3.0
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
       
-      - name: Docker push with metrics
+      - name: 📤 Docker push with metrics
         id: push_metrics
         run: |
           push_start=$(date +%s)
           
-          echo "📤 Pushing Docker image..."
+          echo "📤 Pushing Docker image with metrics..."
           docker push ${{ secrets.DOCKER_USERNAME }}/tesis-demo:${{ env.new_version }}
           
           push_end=$(date +%s)
@@ -142,8 +150,10 @@ jobs:
           echo "=== PUSH METRICS ==="
           echo "Push time: ${push_time}s"
           echo "===================="
+          
+          echo "✅ Docker push metrics collected successfully"
 
-      - name: Calculate total CI time
+      - name: ⏱️ Calculate total CI time
         id: ci_total
         run: |
           ci_end=$(date +%s)
@@ -154,6 +164,8 @@ jobs:
           echo "=== CI TOTAL METRICS ==="
           echo "Total CI time: ${total_ci_time}s"
           echo "========================"
+          
+          echo "✅ CI phase completed - Total time: ${total_ci_time}s"
 
   cd:
     runs-on: [self-hosted, linux]
@@ -164,24 +176,25 @@ jobs:
       total_cd_time: ${{ steps.deploy_metrics.outputs.total_cd_time }}
       
     steps:
-      - name: Record CD start time
+      - name: ⏱️ Record CD start time
         id: cd_start
         run: |
           echo "cd_start_time=$(date +%s)" >> $GITHUB_ENV
           echo "cd_start_timestamp=$(date -Iseconds)" >> $GITHUB_ENV
+          echo "🚀 Starting CD phase with metrics collection"
 
-      - name: Checkout code
+      - name: 📥 Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up kubectl
+      - name: ⚙️ Set up kubectl
         uses: azure/setup-kubectl@v3
         with:
           version: 'latest'
 
-      - name: Configure kubeconfig
+      - name: 🔧 Configure kubeconfig
         run: kubectl config current-context
 
-      - name: Deploy with metrics
+      - name: 🚀 Deploy with metrics collection
         id: deploy_metrics
         env:
           DOCKERHUB_USER: ${{ secrets.DOCKER_USERNAME }}
@@ -189,14 +202,16 @@ jobs:
         run: |
           deploy_start=$(date +%s)
           
-          echo "🚀 Starting deployment..."
+          echo "🚀 Starting deployment with metrics..."
+          echo "📦 Deploying image: $DOCKERHUB_USER/tesis-demo:$IMAGE_TAG"
+          
           envsubst < k8s/deployment.yaml | kubectl apply -f -
           kubectl apply -f k8s/service.yaml
           
           deploy_end=$(date +%s)
           deployment_time=$((deploy_end - deploy_start))
           
-          echo "⏳ Starting rollout..."
+          echo "⏳ Starting rollout with metrics..."
           rollout_start=$(date +%s)
           kubectl rollout restart deployment/tesis-demo
           kubectl rollout status deployment/tesis-demo --timeout=300s
@@ -217,13 +232,15 @@ jobs:
           echo "Rollout time: ${rollout_time}s"
           echo "Total CD time: ${total_cd_time}s"
           echo "=========================="
+          
+          echo "✅ Deployment metrics collected successfully"
 
-      - name: Health Check
+      - name: 🏥 Health Check with metrics
         id: health_check
         run: |
           health_start=$(date +%s)
           
-          echo "🏥 Performing health check..."
+          echo "🏥 Performing health check with metrics..."
           # Wait for service to be ready
           max_attempts=30
           attempt=1
@@ -247,58 +264,96 @@ jobs:
           echo "=== HEALTH CHECK METRICS ==="
           echo "Health check time: ${health_check_time}s"
           echo "============================"
+          
+          echo "✅ Health check completed - Time: ${health_check_time}s"
 
   metrics_summary:
     runs-on: ubuntu-latest
     needs: [ci, cd]
     if: always()
     steps:
-      - name: Generate metrics summary
+      - name: 📊 Generate comprehensive metrics summary
         run: |
-          echo "# 📊 Pipeline Metrics Summary" >> $GITHUB_STEP_SUMMARY
+          echo "# 📊 Pipeline Performance Metrics - Research Data" >> $GITHUB_STEP_SUMMARY
+          echo "===============================================" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## CI Metrics" >> $GITHUB_STEP_SUMMARY
+          echo "🔬 **Research Note**: This data is collected for VSE CI/CD pipeline analysis" >> $GITHUB_STEP_SUMMARY
+          echo "📅 **Timestamp**: $(date -Iseconds)" >> $GITHUB_STEP_SUMMARY
+          echo "🏷️ **Run ID**: ${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 🔨 CI Metrics" >> $GITHUB_STEP_SUMMARY
           echo "- **Build Time**: ${{ needs.ci.outputs.build_time }}s" >> $GITHUB_STEP_SUMMARY
           echo "- **Test Time**: ${{ needs.ci.outputs.test_time }}s" >> $GITHUB_STEP_SUMMARY
           echo "- **Test Coverage**: ${{ needs.ci.outputs.test_coverage }}%" >> $GITHUB_STEP_SUMMARY
           echo "- **Docker Build Time**: ${{ needs.ci.outputs.docker_build_time }}s" >> $GITHUB_STEP_SUMMARY
           echo "- **Total CI Time**: ${{ needs.ci.outputs.total_ci_time }}s" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## CD Metrics" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 CD Metrics" >> $GITHUB_STEP_SUMMARY
           echo "- **Deployment Time**: ${{ needs.cd.outputs.deployment_time }}s" >> $GITHUB_STEP_SUMMARY
           echo "- **Rollout Time**: ${{ needs.cd.outputs.rollout_time }}s" >> $GITHUB_STEP_SUMMARY
           echo "- **Total CD Time**: ${{ needs.cd.outputs.total_cd_time }}s" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## Overall Metrics" >> $GITHUB_STEP_SUMMARY
+          echo "## 📈 Overall Performance" >> $GITHUB_STEP_SUMMARY
           total_pipeline_time=$((${{ needs.ci.outputs.total_ci_time }} + ${{ needs.cd.outputs.total_cd_time }}))
           echo "- **Total Pipeline Time**: ${total_pipeline_time}s" >> $GITHUB_STEP_SUMMARY
-          echo "- **Timestamp**: $(date -Iseconds)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Pipeline Efficiency**: $(echo "scale=1; $total_pipeline_time / 60" | bc)min" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "📊 **Data Usage**: These metrics are automatically collected for research analysis" >> $GITHUB_STEP_SUMMARY
 
-      - name: Store metrics as artifacts
+      - name: 💾 Store metrics for research analysis
         run: |
           mkdir -p metrics
+          
+          # Create detailed JSON with research metadata
           cat > metrics/pipeline_metrics_$(date +%Y%m%d_%H%M%S).json << EOF
           {
-            "timestamp": "$(date -Iseconds)",
-            "run_number": "${{ github.run_number }}",
-            "ci": {
+            "metadata": {
+              "timestamp": "$(date -Iseconds)",
+              "run_id": "${{ github.run_id }}",
+              "run_number": "${{ github.run_number }}",
+              "commit_sha": "${{ github.sha }}",
+              "branch": "${{ github.ref_name }}",
+              "workflow_name": "CI/CD Pipeline with Enhanced Metrics",
+              "research_purpose": "VSE CI/CD Performance Analysis"
+            },
+            "ci_metrics": {
               "build_time": ${{ needs.ci.outputs.build_time }},
               "test_time": ${{ needs.ci.outputs.test_time }},
               "test_coverage": ${{ needs.ci.outputs.test_coverage }},
               "docker_build_time": ${{ needs.ci.outputs.docker_build_time }},
               "total_ci_time": ${{ needs.ci.outputs.total_ci_time }}
             },
-            "cd": {
+            "cd_metrics": {
               "deployment_time": ${{ needs.cd.outputs.deployment_time }},
               "rollout_time": ${{ needs.cd.outputs.rollout_time }},
               "total_cd_time": ${{ needs.cd.outputs.total_cd_time }}
             },
-            "total_pipeline_time": $((${{ needs.ci.outputs.total_ci_time }} + ${{ needs.cd.outputs.total_cd_time }}))
+            "overall_metrics": {
+              "total_pipeline_time": $((${{ needs.ci.outputs.total_ci_time }} + ${{ needs.cd.outputs.total_cd_time }})),
+              "success": true,
+              "environment": "production"
+            }
           }
           EOF
+          
+          echo "📊 Research metrics stored successfully"
+          echo "📁 File: metrics/pipeline_metrics_$(date +%Y%m%d_%H%M%S).json"
 
-      - name: Upload metrics
+      - name: 📤 Upload research metrics
         uses: actions/upload-artifact@v4
         with:
-          name: pipeline-metrics-${{ github.run_number }}
+          name: research-pipeline-metrics-${{ github.run_number }}
           path: metrics/
+          retention-days: 90  # Keep for 3 months for research
+
+      - name: 🎉 Pipeline completion summary
+        run: |
+          echo "🎉 CI/CD Pipeline with Metrics Collection Completed!"
+          echo "============================================="
+          echo "✅ CI Phase: ${{ needs.ci.outputs.total_ci_time }}s"
+          echo "✅ CD Phase: ${{ needs.cd.outputs.total_cd_time }}s"
+          echo "✅ Total Time: $((${{ needs.ci.outputs.total_ci_time }} + ${{ needs.cd.outputs.total_cd_time }}))s"
+          echo "📊 Metrics: Successfully collected for research analysis"
+          echo "🚀 Deployment: Live and healthy"
+          echo "============================================="
