@@ -12,12 +12,20 @@ import com.example.billing.common.InvoiceResponseMapper;
 import com.example.billing.dto.InvoiceRequest;
 import com.example.billing.dto.InvoiceResponse;
 import com.example.billing.dto.InvoiceSearchRequest;
+import com.example.billing.dto.InvoiceStatsResponse;
 import com.example.billing.entities.Invoice;
 import com.example.billing.exception.BusinessRuleException;
 import com.example.billing.respository.InvoiceRepository;
 
 import org.springframework.web.bind.annotation.RequestMapping;
+
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.DoubleSummaryStatistics;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -193,6 +201,46 @@ public class InvoiceRestController {
         return new PageImpl<>(responses, pageable, customerInvoices.size());
     }
 
+    @Operation(
+        description = "Get comprehensive statistics about invoices",
+        summary = "Return analytics data including totals, averages, and counts"
+    )
+    @GetMapping("/statistics")
+    public InvoiceStatsResponse getInvoiceStatistics() throws BusinessRuleException {
+        List<Invoice> allInvoices = billingRepository.findAll();
+        
+        if (allInvoices.isEmpty()) {
+            throw new BusinessRuleException("NOT_FOUND", "No invoices available for statistics", HttpStatus.NOT_FOUND);
+        }
+        
+        InvoiceStatsResponse stats = new InvoiceStatsResponse();
+        stats.setTotalInvoices(allInvoices.size());
+        
+        DoubleSummaryStatistics amountStats = allInvoices.stream()
+            .mapToDouble(Invoice::getAmount)
+            .summaryStatistics();
+        
+        stats.setTotalAmount(amountStats.getSum());
+        stats.setAverageAmount(amountStats.getAverage());
+        stats.setMaxAmount(amountStats.getMax());
+        stats.setMinAmount(amountStats.getMin());
+        
+        Map<String, Long> customerCounts = allInvoices.stream()
+            .collect(Collectors.groupingBy(Invoice::getCustomerId, Collectors.counting()));
+        stats.setUniqueCustomers(customerCounts.size());
+        stats.setCustomerInvoiceCounts(customerCounts);
+        
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("topCustomerByInvoiceCount", getTopCustomerByCount(customerCounts));
+        metadata.put("topCustomerByAmount", getTopCustomerByAmount(allInvoices));
+        metadata.put("averageInvoicesPerCustomer", (double) allInvoices.size() / customerCounts.size());
+        
+        stats.setMetadata(metadata);
+        stats.setGeneratedAt(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+        
+        return stats;
+    }
+
     private boolean matchesSearchCriteria(Invoice invoice, InvoiceSearchRequest searchRequest) {
         if (searchRequest.getCustomerId() != null && !searchRequest.getCustomerId().isEmpty()) {
             if (!searchRequest.getCustomerId().equals(invoice.getCustomerId())) {
@@ -244,4 +292,25 @@ public class InvoiceRestController {
                 return java.util.Comparator.comparing(Invoice::getId);
         }
     }
+
+    private String getTopCustomerByCount(Map<String, Long> customerCounts) {
+        return customerCounts.entrySet().stream()
+            .max(Map.Entry.comparingByValue())
+            .map(Map.Entry::getKey)
+            .orElse("N/A");
+    }
+
+    private String getTopCustomerByAmount(List<Invoice> invoices) {
+        Map<String, Double> customerAmounts = invoices.stream()
+            .collect(Collectors.groupingBy(
+                Invoice::getCustomerId,
+                Collectors.summingDouble(Invoice::getAmount)
+            ));
+        
+        return customerAmounts.entrySet().stream()
+            .max(Map.Entry.comparingByValue())
+            .map(Map.Entry::getKey)
+            .orElse("N/A");
+    }
+
 }
