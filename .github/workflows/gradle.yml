@@ -13,8 +13,8 @@ jobs:
       image_tag: ${{ env.new_version }}
       build_time: ${{ steps.build_metrics.outputs.build_time }}
       test_time: ${{ steps.build_metrics.outputs.test_time }}
-      docker_build_time: ${{ steps.build_metrics.outputs.docker_build_time }}
-      total_ci_time: ${{ steps.build_metrics.outputs.total_ci_time }}
+      docker_build_time: ${{ steps.docker_metrics.outputs.docker_build_time }}
+      total_ci_time: ${{ steps.ci_total.outputs.total_ci_time }}
       test_coverage: ${{ steps.build_metrics.outputs.test_coverage }}
 
     steps:
@@ -71,16 +71,17 @@ jobs:
             test_coverage=0
           fi
           
-          # Output metrics
+          # Output metrics to GitHub outputs
           echo "build_time=$build_time" >> $GITHUB_OUTPUT
           echo "test_time=$test_time" >> $GITHUB_OUTPUT
           echo "test_coverage=$test_coverage" >> $GITHUB_OUTPUT
           
-          # Log metrics
-          echo "📊 Build Metrics:"
-          echo "   - Build time: ${build_time}s"
-          echo "   - Test time: ${test_time}s"
-          echo "   - Test coverage: ${test_coverage}%"
+          # IMPORTANT: Print metrics in specific format for script extraction
+          echo "=== METRICS REPORT ==="
+          echo "Build time: ${build_time}s"
+          echo "Test time: ${test_time}s"
+          echo "Test coverage: ${test_coverage}%"
+          echo "======================"
 
       - name: Generate semantic version
         id: semver
@@ -112,9 +113,11 @@ jobs:
           echo "docker_build_time=$docker_build_time" >> $GITHUB_OUTPUT
           echo "image_size=$image_size" >> $GITHUB_OUTPUT
           
-          echo "📊 Docker Metrics:"
-          echo "   - Build time: ${docker_build_time}s"
-          echo "   - Image size: $image_size"
+          # IMPORTANT: Print metrics in specific format for script extraction
+          echo "=== DOCKER METRICS ==="
+          echo "Build time: ${docker_build_time}s"
+          echo "Image size: $image_size"
+          echo "======================"
 
       - name: Docker Login
         uses: docker/login-action@v3.3.0
@@ -134,7 +137,11 @@ jobs:
           push_time=$((push_end - push_start))
           
           echo "push_time=$push_time" >> $GITHUB_OUTPUT
-          echo "📊 Push time: ${push_time}s"
+          
+          # IMPORTANT: Print metrics in specific format for script extraction
+          echo "=== PUSH METRICS ==="
+          echo "Push time: ${push_time}s"
+          echo "===================="
 
       - name: Calculate total CI time
         id: ci_total
@@ -142,7 +149,11 @@ jobs:
           ci_end=$(date +%s)
           total_ci_time=$((ci_end - ci_start_time))
           echo "total_ci_time=$total_ci_time" >> $GITHUB_OUTPUT
-          echo "📊 Total CI time: ${total_ci_time}s"
+          
+          # IMPORTANT: Print metrics in specific format for script extraction
+          echo "=== CI TOTAL METRICS ==="
+          echo "Total CI time: ${total_ci_time}s"
+          echo "========================"
 
   cd:
     runs-on: [self-hosted, linux]
@@ -200,10 +211,12 @@ jobs:
           echo "rollout_time=$rollout_time" >> $GITHUB_OUTPUT
           echo "total_cd_time=$total_cd_time" >> $GITHUB_OUTPUT
           
-          echo "📊 Deployment Metrics:"
-          echo "   - Deployment time: ${deployment_time}s"
-          echo "   - Rollout time: ${rollout_time}s"
-          echo "   - Total CD time: ${total_cd_time}s"
+          # IMPORTANT: Print metrics in specific format for script extraction
+          echo "=== DEPLOYMENT METRICS ==="
+          echo "Deployment time: ${deployment_time}s"
+          echo "Rollout time: ${rollout_time}s"
+          echo "Total CD time: ${total_cd_time}s"
+          echo "=========================="
 
       - name: Health Check
         id: health_check
@@ -229,7 +242,11 @@ jobs:
           health_check_time=$((health_end - health_start))
           
           echo "health_check_time=$health_check_time" >> $GITHUB_OUTPUT
-          echo "📊 Health check time: ${health_check_time}s"
+          
+          # IMPORTANT: Print metrics in specific format for script extraction
+          echo "=== HEALTH CHECK METRICS ==="
+          echo "Health check time: ${health_check_time}s"
+          echo "============================"
 
   metrics_summary:
     runs-on: ubuntu-latest
@@ -244,7 +261,7 @@ jobs:
           echo "- **Build Time**: ${{ needs.ci.outputs.build_time }}s" >> $GITHUB_STEP_SUMMARY
           echo "- **Test Time**: ${{ needs.ci.outputs.test_time }}s" >> $GITHUB_STEP_SUMMARY
           echo "- **Test Coverage**: ${{ needs.ci.outputs.test_coverage }}%" >> $GITHUB_STEP_SUMMARY
-          echo "- **Docker Build Time**: ${{ steps.docker_metrics.outputs.docker_build_time }}s" >> $GITHUB_STEP_SUMMARY
+          echo "- **Docker Build Time**: ${{ needs.ci.outputs.docker_build_time }}s" >> $GITHUB_STEP_SUMMARY
           echo "- **Total CI Time**: ${{ needs.ci.outputs.total_ci_time }}s" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## CD Metrics" >> $GITHUB_STEP_SUMMARY
@@ -263,10 +280,12 @@ jobs:
           cat > metrics/pipeline_metrics_$(date +%Y%m%d_%H%M%S).json << EOF
           {
             "timestamp": "$(date -Iseconds)",
+            "run_number": "${{ github.run_number }}",
             "ci": {
               "build_time": ${{ needs.ci.outputs.build_time }},
               "test_time": ${{ needs.ci.outputs.test_time }},
               "test_coverage": ${{ needs.ci.outputs.test_coverage }},
+              "docker_build_time": ${{ needs.ci.outputs.docker_build_time }},
               "total_ci_time": ${{ needs.ci.outputs.total_ci_time }}
             },
             "cd": {
