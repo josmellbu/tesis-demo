@@ -3,9 +3,10 @@ kind: Service
 metadata:
   name: tesis-demo
 spec:
-  type: ClusterIP
+  type: NodePort
   selector:
     app: tesis-demo
   ports:
   - port: 80
     targetPort: 8080
+    nodePort: 30080

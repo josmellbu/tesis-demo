@@ -1,4 +1,4 @@
-name: Java CI/CD with Gradle
+name: Java CI/CD with Gradle - Enhanced Metrics
 
 on:
   push:
@@ -8,14 +8,24 @@ on:
 
 jobs:
   ci:
-
     runs-on: ubuntu-latest
-    # permissions:
-    #   contents: read
-    #   id-token: write
+    outputs:
+      image_tag: ${{ env.new_version }}
+      build_time: ${{ steps.build_metrics.outputs.build_time }}
+      test_time: ${{ steps.build_metrics.outputs.test_time }}
+      docker_build_time: ${{ steps.docker_metrics.outputs.docker_build_time }}
+      total_ci_time: ${{ steps.ci_total.outputs.total_ci_time }}
+      test_coverage: ${{ steps.build_metrics.outputs.test_coverage }}
 
     steps:
+      - name: Record CI start time
+        id: ci_start
+        run: |
+          echo "ci_start_time=$(date +%s)" >> $GITHUB_ENV
+          echo "ci_start_timestamp=$(date -Iseconds)" >> $GITHUB_ENV
+
       - uses: actions/checkout@v4
+      
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -28,8 +38,50 @@ jobs:
       - name: Set execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Build with Gradle Wrapper
-        run: ./gradlew test
+      - name: Build and Test with Metrics
+        id: build_metrics
+        run: |
+          # Record build start time
+          build_start=$(date +%s)
+          
+          # Build the application
+          echo "🔨 Starting build process..."
+          ./gradlew build -x test
+          build_end=$(date +%s)
+          build_time=$((build_end - build_start))
+          
+          # Run tests
+          echo "🧪 Starting test execution..."
+          test_start=$(date +%s)
+          ./gradlew test jacocoTestReport
+          test_end=$(date +%s)
+          test_time=$((test_end - test_start))
+          
+          # Extract test coverage
+          if [ -f "build/reports/jacoco/test/jacocoTestReport.xml" ]; then
+            coverage=$(grep -o 'missed="[0-9]*"' build/reports/jacoco/test/jacocoTestReport.xml | head -1 | grep -o '[0-9]*')
+            covered=$(grep -o 'covered="[0-9]*"' build/reports/jacoco/test/jacocoTestReport.xml | head -1 | grep -o '[0-9]*')
+            if [ -n "$coverage" ] && [ -n "$covered" ]; then
+              total=$((coverage + covered))
+              test_coverage=$((covered * 100 / total))
+            else
+              test_coverage=0
+            fi
+          else
+            test_coverage=0
+          fi
+          
+          # Output metrics to GitHub outputs
+          echo "build_time=$build_time" >> $GITHUB_OUTPUT
+          echo "test_time=$test_time" >> $GITHUB_OUTPUT
+          echo "test_coverage=$test_coverage" >> $GITHUB_OUTPUT
+          
+          # IMPORTANT: Print metrics in specific format for script extraction
+          echo "=== METRICS REPORT ==="
+          echo "Build time: ${build_time}s"
+          echo "Test time: ${test_time}s"
+          echo "Test coverage: ${test_coverage}%"
+          echo "======================"
 
       - name: Generate semantic version
         id: semver
@@ -38,17 +90,34 @@ jobs:
           echo "Último tag: $latest_tag"
 
           IFS='.' read -r major minor patch <<<"${latest_tag//v/}"
-
           patch=$((patch + 1))
           new_version="v$major.$minor.$patch"
-  
+          
           echo "Nuevo tag: $new_version"
-
           echo "new_version=$new_version" >> $GITHUB_ENV
 
-      - name: docker build 
+      - name: Docker build with metrics
+        id: docker_metrics
         run: |
+          docker_start=$(date +%s)
+          
+          echo "🐳 Building Docker image..."
           docker build -t ${{ secrets.DOCKER_USERNAME }}/tesis-demo:${{ env.new_version }} .
+          
+          docker_end=$(date +%s)
+          docker_build_time=$((docker_end - docker_start))
+          
+          # Get image size
+          image_size=$(docker images ${{ secrets.DOCKER_USERNAME }}/tesis-demo:${{ env.new_version }} --format "{{.Size}}")
+          
+          echo "docker_build_time=$docker_build_time" >> $GITHUB_OUTPUT
+          echo "image_size=$image_size" >> $GITHUB_OUTPUT
+          
+          # IMPORTANT: Print metrics in specific format for script extraction
+          echo "=== DOCKER METRICS ==="
+          echo "Build time: ${docker_build_time}s"
+          echo "Image size: $image_size"
+          echo "======================"
 
       - name: Docker Login
         uses: docker/login-action@v3.3.0
@@ -56,17 +125,51 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
       
-      - name: docker push 
+      - name: Docker push with metrics
+        id: push_metrics
         run: |
+          push_start=$(date +%s)
+          
+          echo "📤 Pushing Docker image..."
           docker push ${{ secrets.DOCKER_USERNAME }}/tesis-demo:${{ env.new_version }}
-      
-    outputs:
-        image_tag: ${{ env.new_version }}
+          
+          push_end=$(date +%s)
+          push_time=$((push_end - push_start))
+          
+          echo "push_time=$push_time" >> $GITHUB_OUTPUT
+          
+          # IMPORTANT: Print metrics in specific format for script extraction
+          echo "=== PUSH METRICS ==="
+          echo "Push time: ${push_time}s"
+          echo "===================="
+
+      - name: Calculate total CI time
+        id: ci_total
+        run: |
+          ci_end=$(date +%s)
+          total_ci_time=$((ci_end - ci_start_time))
+          echo "total_ci_time=$total_ci_time" >> $GITHUB_OUTPUT
+          
+          # IMPORTANT: Print metrics in specific format for script extraction
+          echo "=== CI TOTAL METRICS ==="
+          echo "Total CI time: ${total_ci_time}s"
+          echo "========================"
 
   cd:
     runs-on: [self-hosted, linux]
     needs: ci
+    outputs:
+      deployment_time: ${{ steps.deploy_metrics.outputs.deployment_time }}
+      rollout_time: ${{ steps.deploy_metrics.outputs.rollout_time }}
+      total_cd_time: ${{ steps.deploy_metrics.outputs.total_cd_time }}
+      
     steps:
+      - name: Record CD start time
+        id: cd_start
+        run: |
+          echo "cd_start_time=$(date +%s)" >> $GITHUB_ENV
+          echo "cd_start_timestamp=$(date -Iseconds)" >> $GITHUB_ENV
+
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -78,14 +181,124 @@ jobs:
       - name: Configure kubeconfig
         run: kubectl config current-context
 
-      - name: Deploy with envsubst
+      - name: Deploy with metrics
+        id: deploy_metrics
         env:
           DOCKERHUB_USER: ${{ secrets.DOCKER_USERNAME }}
           IMAGE_TAG: ${{ needs.ci.outputs.image_tag }}
         run: |
+          deploy_start=$(date +%s)
+          
+          echo "🚀 Starting deployment..."
           envsubst < k8s/deployment.yaml | kubectl apply -f -
           kubectl apply -f k8s/service.yaml
-          kubectl rollout status deployment/tesis-demo
+          
+          deploy_end=$(date +%s)
+          deployment_time=$((deploy_end - deploy_start))
+          
+          echo "⏳ Starting rollout..."
+          rollout_start=$(date +%s)
+          kubectl rollout restart deployment/tesis-demo
+          kubectl rollout status deployment/tesis-demo --timeout=300s
+          rollout_end=$(date +%s)
+          rollout_time=$((rollout_end - rollout_start))
+          
+          # Total CD time
+          cd_end=$(date +%s)
+          total_cd_time=$((cd_end - cd_start_time))
+          
+          echo "deployment_time=$deployment_time" >> $GITHUB_OUTPUT
+          echo "rollout_time=$rollout_time" >> $GITHUB_OUTPUT
+          echo "total_cd_time=$total_cd_time" >> $GITHUB_OUTPUT
+          
+          # IMPORTANT: Print metrics in specific format for script extraction
+          echo "=== DEPLOYMENT METRICS ==="
+          echo "Deployment time: ${deployment_time}s"
+          echo "Rollout time: ${rollout_time}s"
+          echo "Total CD time: ${total_cd_time}s"
+          echo "=========================="
 
-      - name: Rollout status
-        run: kubectl rollout status deployment/tesis-demo
+      - name: Health Check
+        id: health_check
+        run: |
+          health_start=$(date +%s)
+          
+          echo "🏥 Performing health check..."
+          # Wait for service to be ready
+          max_attempts=30
+          attempt=1
+          
+          while [ $attempt -le $max_attempts ]; do
+            if kubectl get pods -l app=tesis-demo | grep "Running"; then
+              echo "✅ Application is running (attempt $attempt)"
+              break
+            fi
+            echo "⏳ Waiting for application... (attempt $attempt/$max_attempts)"
+            sleep 10
+            attempt=$((attempt + 1))
+          done
+          
+          health_end=$(date +%s)
+          health_check_time=$((health_end - health_start))
+          
+          echo "health_check_time=$health_check_time" >> $GITHUB_OUTPUT
+          
+          # IMPORTANT: Print metrics in specific format for script extraction
+          echo "=== HEALTH CHECK METRICS ==="
+          echo "Health check time: ${health_check_time}s"
+          echo "============================"
+
+  metrics_summary:
+    runs-on: ubuntu-latest
+    needs: [ci, cd]
+    if: always()
+    steps:
+      - name: Generate metrics summary
+        run: |
+          echo "# 📊 Pipeline Metrics Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## CI Metrics" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Time**: ${{ needs.ci.outputs.build_time }}s" >> $GITHUB_STEP_SUMMARY
+          echo "- **Test Time**: ${{ needs.ci.outputs.test_time }}s" >> $GITHUB_STEP_SUMMARY
+          echo "- **Test Coverage**: ${{ needs.ci.outputs.test_coverage }}%" >> $GITHUB_STEP_SUMMARY
+          echo "- **Docker Build Time**: ${{ needs.ci.outputs.docker_build_time }}s" >> $GITHUB_STEP_SUMMARY
+          echo "- **Total CI Time**: ${{ needs.ci.outputs.total_ci_time }}s" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## CD Metrics" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deployment Time**: ${{ needs.cd.outputs.deployment_time }}s" >> $GITHUB_STEP_SUMMARY
+          echo "- **Rollout Time**: ${{ needs.cd.outputs.rollout_time }}s" >> $GITHUB_STEP_SUMMARY
+          echo "- **Total CD Time**: ${{ needs.cd.outputs.total_cd_time }}s" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Overall Metrics" >> $GITHUB_STEP_SUMMARY
+          total_pipeline_time=$((${{ needs.ci.outputs.total_ci_time }} + ${{ needs.cd.outputs.total_cd_time }}))
+          echo "- **Total Pipeline Time**: ${total_pipeline_time}s" >> $GITHUB_STEP_SUMMARY
+          echo "- **Timestamp**: $(date -Iseconds)" >> $GITHUB_STEP_SUMMARY
+
+      - name: Store metrics as artifacts
+        run: |
+          mkdir -p metrics
+          cat > metrics/pipeline_metrics_$(date +%Y%m%d_%H%M%S).json << EOF
+          {
+            "timestamp": "$(date -Iseconds)",
+            "run_number": "${{ github.run_number }}",
+            "ci": {
+              "build_time": ${{ needs.ci.outputs.build_time }},
+              "test_time": ${{ needs.ci.outputs.test_time }},
+              "test_coverage": ${{ needs.ci.outputs.test_coverage }},
+              "docker_build_time": ${{ needs.ci.outputs.docker_build_time }},
+              "total_ci_time": ${{ needs.ci.outputs.total_ci_time }}
+            },
+            "cd": {
+              "deployment_time": ${{ needs.cd.outputs.deployment_time }},
+              "rollout_time": ${{ needs.cd.outputs.rollout_time }},
+              "total_cd_time": ${{ needs.cd.outputs.total_cd_time }}
+            },
+            "total_pipeline_time": $((${{ needs.ci.outputs.total_ci_time }} + ${{ needs.cd.outputs.total_cd_time }}))
+          }
+          EOF
+
+      - name: Upload metrics
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-metrics-${{ github.run_number }}
+          path: metrics/
