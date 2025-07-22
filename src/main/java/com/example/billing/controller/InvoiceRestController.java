@@ -362,6 +362,49 @@ public class InvoiceRestController {
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
+    @Operation(
+        description = "Delete multiple invoices by IDs",
+        summary = "Bulk delete operation with detailed response"
+    )
+    @DeleteMapping("/bulk")
+    public ResponseEntity<BulkOperationResponse> deleteBulkInvoices(@RequestBody List<String> invoiceIds) throws BusinessRuleException {
+        if (invoiceIds == null || invoiceIds.isEmpty()) {
+            throw new BusinessRuleException("INVALID_INPUT", "Must provide at least one invoice ID", HttpStatus.BAD_REQUEST);
+        }
+        
+        long startTime = System.currentTimeMillis();
+        BulkOperationResponse response = new BulkOperationResponse();
+        response.setOperationType("BULK_DELETE");
+        
+        List<String> deletedIds = new ArrayList<>();
+        List<String> errors = new ArrayList<>();
+        
+        for (String id : invoiceIds) {
+            try {
+                Optional<Invoice> invoice = billingRepository.findById(id);
+                if (invoice.isPresent()) {
+                    billingRepository.delete(invoice.get());
+                    deletedIds.add(id);
+                } else {
+                    errors.add(String.format("Invoice ID %s not found", id));
+                }
+            } catch (Exception e) {
+                errors.add(String.format("Error deleting invoice %s: %s", id, e.getMessage()));
+            }
+        }
+        
+        response.setSuccessCount(deletedIds.size());
+        response.setErrorCount(errors.size());
+        response.setDeletedIds(deletedIds);
+        response.setErrors(errors);
+        response.setCompletedAt(LocalDateTime.now());
+        response.setDurationMs(System.currentTimeMillis() - startTime);
+        response.setMessage(String.format("Bulk deletion completed: %d successful, %d failed", 
+            deletedIds.size(), errors.size()));
+        
+        return ResponseEntity.ok(response);
+    }
+
     private boolean matchesSearchCriteria(Invoice invoice, InvoiceSearchRequest searchRequest) {
         if (searchRequest.getCustomerId() != null && !searchRequest.getCustomerId().isEmpty()) {
             if (!searchRequest.getCustomerId().equals(invoice.getCustomerId())) {
