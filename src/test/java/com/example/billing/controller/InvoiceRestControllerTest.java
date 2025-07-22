@@ -670,8 +670,8 @@ class InvoiceRestControllerTest {
             .andExpect(status().isOk())
             .andExpect(content().contentType(MediaType.APPLICATION_JSON))
             .andExpect(jsonPath("$.topCustomers").isArray())
-            .andExpect(jsonPath("$.topCustomers[0].customerId").value("12")) // Customer 12 has highest average
-            .andExpect(jsonPath("$.topCustomers[0].averageAmount").value(1266.75)) // (1200.5 + 1333) / 2
+            .andExpect(jsonPath("$.topCustomers[0].customerId").value("12"))
+            .andExpect(jsonPath("$.topCustomers[0].averageAmount").value(1266.75)) 
             .andExpect(jsonPath("$.metric").value("Average Amount"));
     }
     
@@ -690,15 +690,14 @@ class InvoiceRestControllerTest {
     @Test
     @DisplayName("Should return 404 when no invoices for top customers")
     void shouldReturn404WhenNoInvoicesForTopCustomers() throws Exception {
-        // Given
-        given(billingRepository.findAll()).willReturn(Collections.emptyList());
+    // Given
+    given(billingRepository.findAll()).willReturn(Collections.emptyList());
     
-        // When & Then
-        mockMvc.perform(get("/billing/v1/top-customers"))
-                .andExpect(status().isNotFound());
+    // When & Then
+    mockMvc.perform(get("/billing/v1/top-customers"))
+            .andExpect(status().isNotFound());
     }
 
-    // Helper method to provide sample invoices for top customer tests
     private List<Invoice> createSampleInvoicesWithData() {
         Invoice invoice1 = new Invoice("3d646c6d-0ae1-453a-9203-227bb0acb7f7", "12", "12", 
                 "Compra de equipos informáticos", 1200.5);
@@ -711,5 +710,56 @@ class InvoiceRestControllerTest {
         Invoice invoice5 = new Invoice("6fc25ddf-c8c6-4afd-a1c5-8a989279a0cb", "15", "INV-003", 
                 "Factura de prueba 3", 300.0);
         return Arrays.asList(invoice1, invoice2, invoice3, invoice4, invoice5);
+    }
+
+    @Test
+    @DisplayName("Should return recent invoices successfully")
+    void shouldReturnRecentInvoicesSuccessfully() throws Exception {
+        // Given
+        given(billingRepository.findAll()).willReturn(createSampleInvoicesWithData());
+    
+        // When & Then
+        mockMvc.perform(get("/billing/v1/recent")
+                .param("limit", "3")
+                .param("minAmount", "500"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.recentInvoices").isArray())
+                .andExpect(jsonPath("$.totalFound").value(4)) 
+                .andExpect(jsonPath("$.filters.limit").value(3))
+                .andExpect(jsonPath("$.filters.minAmount").value(500.0))
+                .andExpect(jsonPath("$.summary.totalAmount").exists())
+                .andExpect(jsonPath("$.summary.averageAmount").exists())
+                .andExpect(jsonPath("$.summary.uniqueCustomers").exists());
+    }
+    
+    @Test
+    @DisplayName("Should return recent invoices filtered by customer")
+    void shouldReturnRecentInvoicesFilteredByCustomer() throws Exception {
+        // Given
+        given(billingRepository.findAll()).willReturn(createSampleInvoicesWithData());
+    
+        // When & Then
+        mockMvc.perform(get("/billing/v1/recent")
+                .param("limit", "5")
+                .param("customerId", "12"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.recentInvoices").isArray())
+                .andExpect(jsonPath("$.totalFound").value(2))
+                .andExpect(jsonPath("$.filters.customerId").value("12"));
+    }
+    
+    @Test
+    @DisplayName("Should return 404 when no recent invoices match criteria")
+    void shouldReturn404WhenNoRecentInvoicesMatchCriteria() throws Exception {
+        // Given
+        given(billingRepository.findAll()).willReturn(createSampleInvoicesWithData());
+    
+        // When & Then
+        mockMvc.perform(get("/billing/v1/recent")
+                .param("customerId", "999")
+                .param("minAmount", "5000"))
+                .andExpect(status().isNotFound());
     }
 }
