@@ -6,6 +6,11 @@ metadata:
     app: tesis-demo
 spec:
   replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app: tesis-demo
@@ -13,10 +18,13 @@ spec:
     metadata:
       labels:
         app: tesis-demo
+      annotations:
+        deployment.kubernetes.io/revision: "${IMAGE_TAG}"
     spec:
       containers:
       - name: tesis-demo
         image: ${DOCKERHUB_USER}/tesis-demo:${IMAGE_TAG}
+        imagePullPolicy: Always  # CRITICAL: Always pull latest image
         ports:
         - containerPort: 8080
         env:
@@ -36,3 +44,16 @@ spec:
             secretKeyRef:
               name: mongo-secret
               key: mongo-root-password
+        # Health checks
+        livenessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
