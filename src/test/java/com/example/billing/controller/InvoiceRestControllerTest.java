@@ -762,4 +762,69 @@ class InvoiceRestControllerTest {
                 .param("minAmount", "5000"))
                 .andExpect(status().isNotFound());
     }
+
+    @Test
+    @DisplayName("Should find duplicate invoices by number successfully")
+    void shouldFindDuplicateInvoicesByNumberSuccessfully() throws Exception {
+        // Given - Customer 12 has two invoices with same number "12"
+        given(billingRepository.findAll()).willReturn(createSampleInvoicesWithData());
+    
+        // When & Then
+        mockMvc.perform(get("/billing/v1/duplicates")
+                .param("checkBy", "number"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.duplicateGroups").isArray())
+                .andExpect(jsonPath("$.duplicateGroups[0].duplicateKey").value("Invoice Number: 12"))
+                .andExpect(jsonPath("$.duplicateGroups[0].count").value(2))
+                .andExpect(jsonPath("$.totalDuplicateGroups").value(1))
+                .andExpect(jsonPath("$.checkType").value("number"));
+    }
+    
+    @Test
+    @DisplayName("Should find duplicate invoices by customer and amount")
+    void shouldFindDuplicateInvoicesByCustomerAmount() throws Exception {
+        // Given
+        given(billingRepository.findAll()).willReturn(createSampleInvoicesWithData());
+    
+        // When & Then
+        mockMvc.perform(get("/billing/v1/duplicates")
+                .param("checkBy", "customer_amount"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.duplicateGroups").isArray())
+                .andExpect(jsonPath("$.checkType").value("customer_amount"));
+    }
+    
+    @Test
+    @DisplayName("Should return empty duplicates when none found")
+    void shouldReturnEmptyDuplicatesWhenNoneFound() throws Exception {
+        // Given - Create invoices with unique numbers
+        Invoice uniqueInvoice1 = new Invoice("id1", "12", "UNIQUE-001", "Detail 1", 100.0);
+        Invoice uniqueInvoice2 = new Invoice("id2", "13", "UNIQUE-002", "Detail 2", 200.0);
+        List<Invoice> uniqueInvoices = Arrays.asList(uniqueInvoice1, uniqueInvoice2);
+        
+        given(billingRepository.findAll()).willReturn(uniqueInvoices);
+    
+        // When & Then
+        mockMvc.perform(get("/billing/v1/duplicates")
+                .param("checkBy", "number"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.duplicateGroups").isEmpty())
+                .andExpect(jsonPath("$.totalDuplicateGroups").value(0))
+                .andExpect(jsonPath("$.message").value("No duplicate invoices found using criteria: number"));
+    }
+    
+    @Test
+    @DisplayName("Should return 400 for invalid duplicate check type")
+    void shouldReturn400ForInvalidDuplicateCheckType() throws Exception {
+        // Given
+        given(billingRepository.findAll()).willReturn(createSampleInvoicesWithData());
+    
+        // When & Then
+        mockMvc.perform(get("/billing/v1/duplicates")
+                .param("checkBy", "invalid_type"))
+                .andExpect(status().isBadRequest());
+    }
 }
