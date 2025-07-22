@@ -241,6 +241,33 @@ public class InvoiceRestController {
         return stats;
     }
 
+    @Operation(
+        description = "Get invoices within a specific amount range",
+        summary = "Filter invoices by minimum and maximum amount"
+    )
+    @GetMapping("/amount-range")
+    public List<InvoiceResponse> getInvoicesByAmountRange(
+            @Parameter(description = "Minimum amount") @RequestParam double minAmount,
+            @Parameter(description = "Maximum amount") @RequestParam double maxAmount) throws BusinessRuleException {
+        
+        if (minAmount > maxAmount) {
+            throw new BusinessRuleException("INVALID_RANGE", "Minimum amount cannot be greater than maximum amount", HttpStatus.BAD_REQUEST);
+        }
+        
+        List<Invoice> allInvoices = billingRepository.findAll();
+        List<Invoice> filteredInvoices = allInvoices.stream()
+            .filter(invoice -> invoice.getAmount() >= minAmount && invoice.getAmount() <= maxAmount)
+            .collect(Collectors.toList());
+        
+        if (filteredInvoices.isEmpty()) {
+            throw new BusinessRuleException("NOT_FOUND", 
+                String.format("No invoices found in amount range %.2f - %.2f", minAmount, maxAmount), 
+                HttpStatus.NOT_FOUND);
+        }
+        
+        return irspm.InvoiceListToInvoiceResponseList(filteredInvoices);
+    }
+
     private boolean matchesSearchCriteria(Invoice invoice, InvoiceSearchRequest searchRequest) {
         if (searchRequest.getCustomerId() != null && !searchRequest.getCustomerId().isEmpty()) {
             if (!searchRequest.getCustomerId().equals(invoice.getCustomerId())) {
