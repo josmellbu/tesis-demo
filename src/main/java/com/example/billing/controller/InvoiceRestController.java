@@ -599,6 +599,106 @@ public class InvoiceRestController {
         return ResponseEntity.ok(result);
     }
 
+    @Operation(
+        description = "Detect potential duplicate invoices based on various criteria",
+        summary = "Find invoices that might be duplicates"
+    )
+    @GetMapping("/duplicates")
+    public ResponseEntity<Map<String, Object>> findDuplicateInvoices(
+            @Parameter(description = "Check by: number, amount, customer_amount, customer_number") 
+            @RequestParam(value = "checkBy", defaultValue = "number") String checkBy) throws BusinessRuleException {
+        
+        List<Invoice> allInvoices = billingRepository.findAll();
+        
+        if (allInvoices.isEmpty()) {
+            throw new BusinessRuleException("NOT_FOUND", "No invoices available for duplicate analysis", HttpStatus.NOT_FOUND);
+        }
+        
+        Map<String, Object> result = new HashMap<>();
+        List<Map<String, Object>> duplicateGroups = new ArrayList<>();
+        
+        switch (checkBy.toLowerCase()) {
+            case "number":
+                Map<String, List<Invoice>> groupedByNumber = allInvoices.stream()
+                    .collect(Collectors.groupingBy(Invoice::getNumber));
+                
+                groupedByNumber.entrySet().stream()
+                    .filter(entry -> entry.getValue().size() > 1)
+                    .forEach(entry -> {
+                        Map<String, Object> group = new HashMap<>();
+                        group.put("duplicateKey", "Invoice Number: " + entry.getKey());
+                        group.put("count", entry.getValue().size());
+                        group.put("invoices", irspm.InvoiceListToInvoiceResponseList(entry.getValue()));
+                        duplicateGroups.add(group);
+                    });
+                break;
+                
+            case "amount":
+                Map<Double, List<Invoice>> groupedByAmount = allInvoices.stream()
+                    .collect(Collectors.groupingBy(Invoice::getAmount));
+                
+                groupedByAmount.entrySet().stream()
+                    .filter(entry -> entry.getValue().size() > 1)
+                    .forEach(entry -> {
+                        Map<String, Object> group = new HashMap<>();
+                        group.put("duplicateKey", "Amount: " + entry.getKey());
+                        group.put("count", entry.getValue().size());
+                        group.put("invoices", irspm.InvoiceListToInvoiceResponseList(entry.getValue()));
+                        duplicateGroups.add(group);
+                    });
+                break;
+                
+            case "customer_amount":
+                Map<String, List<Invoice>> groupedByCustomerAmount = allInvoices.stream()
+                    .collect(Collectors.groupingBy(invoice -> invoice.getCustomerId() + "_" + invoice.getAmount()));
+                
+                groupedByCustomerAmount.entrySet().stream()
+                    .filter(entry -> entry.getValue().size() > 1)
+                    .forEach(entry -> {
+                        String[] parts = entry.getKey().split("_");
+                        Map<String, Object> group = new HashMap<>();
+                        group.put("duplicateKey", "Customer: " + parts[0] + ", Amount: " + parts[1]);
+                        group.put("count", entry.getValue().size());
+                        group.put("invoices", irspm.InvoiceListToInvoiceResponseList(entry.getValue()));
+                        duplicateGroups.add(group);
+                    });
+                break;
+                
+            case "customer_number":
+                Map<String, List<Invoice>> groupedByCustomerNumber = allInvoices.stream()
+                    .collect(Collectors.groupingBy(invoice -> invoice.getCustomerId() + "_" + invoice.getNumber()));
+                
+                groupedByCustomerNumber.entrySet().stream()
+                    .filter(entry -> entry.getValue().size() > 1)
+                    .forEach(entry -> {
+                        String[] parts = entry.getKey().split("_");
+                        Map<String, Object> group = new HashMap<>();
+                        group.put("duplicateKey", "Customer: " + parts[0] + ", Number: " + parts[1]);
+                        group.put("count", entry.getValue().size());
+                        group.put("invoices", irspm.InvoiceListToInvoiceResponseList(entry.getValue()));
+                        duplicateGroups.add(group);
+                    });
+                break;
+                
+            default:
+                throw new BusinessRuleException("INVALID_CHECK_TYPE", "Invalid checkBy type. Use: number, amount, customer_amount, or customer_number", HttpStatus.BAD_REQUEST);
+        }
+        
+        result.put("duplicateGroups", duplicateGroups);
+        result.put("totalDuplicateGroups", duplicateGroups.size());
+        result.put("totalDuplicateInvoices", duplicateGroups.stream()
+            .mapToInt(group -> (Integer) group.get("count"))
+            .sum());
+        result.put("checkType", checkBy);
+        result.put("generatedAt", LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+        
+        if (duplicateGroups.isEmpty()) {
+            result.put("message", "No duplicate invoices found using criteria: " + checkBy);
+        }
+        
+        return ResponseEntity.ok(result);
+    }
+
     private boolean matchesSearchCriteria(Invoice invoice, InvoiceSearchRequest searchRequest) {
         if (searchRequest.getCustomerId() != null && !searchRequest.getCustomerId().isEmpty()) {
             if (!searchRequest.getCustomerId().equals(invoice.getCustomerId())) {
