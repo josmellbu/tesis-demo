@@ -363,4 +363,54 @@ class InvoiceRestControllerTest {
                 .param("maxAmount", "1000"))
                 .andExpect(status().isBadRequest());
     }
+
+    @Test
+    @DisplayName("Should patch invoice successfully")
+    void shouldPatchInvoiceSuccessfully() throws Exception {
+        // Given
+        String invoiceId = "3d646c6d-0ae1-453a-9203-227bb0acb7f7";
+        Map<String, Object> updates = new HashMap<>();
+        updates.put("amount", 1500.0);
+        updates.put("detail", "Compra de equipos informáticos - ACTUALIZADO");
+
+        Invoice updatedInvoice = new Invoice(invoiceId, "12", "12", 
+                "Compra de equipos informáticos - ACTUALIZADO", 1500.0);
+        InvoiceResponse updatedResponse = new InvoiceResponse();
+        updatedResponse.setInvoiceId(invoiceId);
+        updatedResponse.setAmount(1500.0);
+        updatedResponse.setDetail("Compra de equipos informáticos - ACTUALIZADO");
+
+        given(billingRepository.findById(invoiceId)).willReturn(Optional.of(sampleInvoice1));
+        given(billingRepository.save(any(Invoice.class))).willReturn(updatedInvoice);
+        given(invoiceResponseMapper.InvoiceToInvoiceResponse(updatedInvoice))
+                .willReturn(updatedResponse);
+
+        // When & Then
+        mockMvc.perform(patch("/billing/v1/{id}", invoiceId)
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(updates)))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.amount").value(1500.0))
+                .andExpect(jsonPath("$.detail").value("Compra de equipos informáticos - ACTUALIZADO"));
+    }
+
+    @Test
+    @DisplayName("Should return 404 when patching non-existent invoice")
+    void shouldReturn404WhenPatchingNonExistentInvoice() throws Exception {
+        // Given
+        String invoiceId = "non-existent";
+        Map<String, Object> updates = new HashMap<>();
+        updates.put("amount", 1500.0);
+
+        given(billingRepository.findById(invoiceId)).willReturn(Optional.empty());
+
+        // When & Then
+        mockMvc.perform(patch("/billing/v1/{id}", invoiceId)
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(updates)))
+                .andExpect(status().isNotFound());
+    }
 }
