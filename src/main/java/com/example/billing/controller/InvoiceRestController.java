@@ -9,6 +9,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.example.billing.common.InvoiceRequestMapper;
 import com.example.billing.common.InvoiceResponseMapper;
+import com.example.billing.dto.BulkInvoiceRequest;
+import com.example.billing.dto.BulkOperationResponse;
 import com.example.billing.dto.InvoiceRequest;
 import com.example.billing.dto.InvoiceResponse;
 import com.example.billing.dto.InvoiceSearchRequest;
@@ -21,6 +23,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.DoubleSummaryStatistics;
 import java.util.HashMap;
 import java.util.List;
@@ -306,6 +309,57 @@ public class InvoiceRestController {
         InvoiceResponse response = irspm.InvoiceToInvoiceResponse(savedInvoice);
         
         return ResponseEntity.ok(response);
+    }
+
+    @Operation(
+        description = "Create multiple invoices in a single operation",
+        summary = "Bulk create invoices with validation"
+    )
+    @PostMapping("/bulk")
+    public ResponseEntity<BulkOperationResponse> createBulkInvoices(@RequestBody BulkInvoiceRequest bulkRequest) throws BusinessRuleException {
+        List<InvoiceRequest> invoiceRequests = bulkRequest.getInvoices();
+        
+        if (invoiceRequests == null || invoiceRequests.isEmpty()) {
+            throw new BusinessRuleException("INVALID_INPUT", "Bulk request must contain at least one invoice", HttpStatus.BAD_REQUEST);
+        }
+        
+        long startTime = System.currentTimeMillis();
+        BulkOperationResponse response = new BulkOperationResponse();
+        response.setOperationType("BULK_CREATE");
+        
+        List<InvoiceResponse> createdInvoices = new ArrayList<>();
+        List<String> errors = new ArrayList<>();
+        
+        for (int i = 0; i < invoiceRequests.size(); i++) {
+            try {
+                InvoiceRequest request = invoiceRequests.get(i);
+                if (request.getCustomer() == null || request.getCustomer().trim().isEmpty()) {
+                    errors.add(String.format("Invoice %d: Customer ID is required", i + 1));
+                    continue;
+                }
+                if (request.getAmount() <= 0) {
+                    errors.add(String.format("Invoice %d: Amount must be greater than zero", i + 1));
+                    continue;
+                }
+                Invoice invoice = irm.InvoiceRequestToInvoice(request);
+                invoice.setId(UUID.randomUUID().toString());
+                Invoice savedInvoice = billingRepository.save(invoice);
+                createdInvoices.add(irspm.InvoiceToInvoiceResponse(savedInvoice));
+            } catch (Exception e) {
+                errors.add(String.format("Invoice %d: %s", i + 1, e.getMessage()));
+            }
+        }
+        
+        response.setSuccessCount(createdInvoices.size());
+        response.setErrorCount(errors.size());
+        response.setCreatedInvoices(createdInvoices);
+        response.setErrors(errors);
+        response.setCompletedAt(LocalDateTime.now());
+        response.setDurationMs(System.currentTimeMillis() - startTime);
+        response.setMessage(String.format("Processed %d invoices: %d successful, %d failed", 
+            invoiceRequests.size(), createdInvoices.size(), errors.size()));
+        
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     private boolean matchesSearchCriteria(Invoice invoice, InvoiceSearchRequest searchRequest) {
