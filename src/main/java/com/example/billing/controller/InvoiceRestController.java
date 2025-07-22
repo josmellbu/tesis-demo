@@ -11,6 +11,7 @@ import com.example.billing.common.InvoiceRequestMapper;
 import com.example.billing.common.InvoiceResponseMapper;
 import com.example.billing.dto.BulkInvoiceRequest;
 import com.example.billing.dto.BulkOperationResponse;
+import com.example.billing.dto.ExportRequest;
 import com.example.billing.dto.InvoiceRequest;
 import com.example.billing.dto.InvoiceResponse;
 import com.example.billing.dto.InvoiceSearchRequest;
@@ -699,6 +700,66 @@ public class InvoiceRestController {
         return ResponseEntity.ok(result);
     }
 
+    @Operation(
+        description = "Export invoice data in various formats with filtering options",
+        summary = "Generate exportable reports of invoice data"
+    )
+    @PostMapping("/reports/export")
+    public ResponseEntity<Map<String, Object>> exportInvoiceReport(@RequestBody ExportRequest exportRequest) throws BusinessRuleException {
+        List<Invoice> allInvoices = billingRepository.findAll();
+        
+        if (allInvoices.isEmpty()) {
+            throw new BusinessRuleException("NOT_FOUND", "No invoices available for export", HttpStatus.NOT_FOUND);
+        }
+        
+        // Apply filters
+        List<Invoice> filteredInvoices = allInvoices.stream()
+            .filter(invoice -> exportRequest.getCustomerIds() == null || 
+                    exportRequest.getCustomerIds().isEmpty() || 
+                    exportRequest.getCustomerIds().contains(invoice.getCustomerId()))
+            .filter(invoice -> exportRequest.getMinAmount() == null || 
+                    invoice.getAmount() >= exportRequest.getMinAmount())
+            .filter(invoice -> exportRequest.getMaxAmount() == null || 
+                    invoice.getAmount() <= exportRequest.getMaxAmount())
+            .collect(Collectors.toList());
+        
+        if (filteredInvoices.isEmpty()) {
+            throw new BusinessRuleException("NOT_FOUND", "No invoices match the export criteria", HttpStatus.NOT_FOUND);
+        }
+        
+        Map<String, Object> exportData = new HashMap<>();
+        
+        // Generate the export based on format
+        switch (exportRequest.getFormat().toLowerCase()) {
+            case "summary":
+                exportData.put("summary", generateSummaryReport(filteredInvoices));
+                break;
+            case "detailed":
+                exportData.put("invoices", irspm.InvoiceListToInvoiceResponseList(filteredInvoices));
+                exportData.put("details", generateDetailedReport(filteredInvoices));
+                break;
+            case "analytics":
+                exportData.put("analytics", generateAnalyticsReport(filteredInvoices));
+                break;
+            default:
+                throw new BusinessRuleException("INVALID_FORMAT", "Invalid export format. Use: summary, detailed, or analytics", HttpStatus.BAD_REQUEST);
+        }
+        
+        // Add metadata
+        exportData.put("exportMetadata", Map.of(
+            "generatedAt", LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
+            "totalInvoicesExported", filteredInvoices.size(),
+            "exportFormat", exportRequest.getFormat(),
+            "filters", Map.of(
+                "customerIds", exportRequest.getCustomerIds() != null ? exportRequest.getCustomerIds() : "all",
+                "minAmount", exportRequest.getMinAmount() != null ? exportRequest.getMinAmount() : "none",
+                "maxAmount", exportRequest.getMaxAmount() != null ? exportRequest.getMaxAmount() : "none"
+            )
+        ));
+        
+        return ResponseEntity.ok(exportData);
+    }
+
     private boolean matchesSearchCriteria(Invoice invoice, InvoiceSearchRequest searchRequest) {
         if (searchRequest.getCustomerId() != null && !searchRequest.getCustomerId().isEmpty()) {
             if (!searchRequest.getCustomerId().equals(invoice.getCustomerId())) {
@@ -769,6 +830,58 @@ public class InvoiceRestController {
             .max(Map.Entry.comparingByValue())
             .map(Map.Entry::getKey)
             .orElse("N/A");
+    }
+
+    private Map<String, Object> generateSummaryReport(List<Invoice> invoices) {
+        DoubleSummaryStatistics stats = invoices.stream()
+            .mapToDouble(Invoice::getAmount)
+            .summaryStatistics();
+        
+        return Map.of(
+            "totalInvoices", invoices.size(),
+            "totalAmount", stats.getSum(),
+            "averageAmount", stats.getAverage(),
+            "maxAmount", stats.getMax(),
+            "minAmount", stats.getMin(),
+            "uniqueCustomers", invoices.stream().map(Invoice::getCustomerId).distinct().count()
+        );
+    }
+
+    private Map<String, Object> generateDetailedReport(List<Invoice> invoices) {
+        Map<String, Long> customerCounts = invoices.stream()
+            .collect(Collectors.groupingBy(Invoice::getCustomerId, Collectors.counting()));
+        
+        Map<String, Double> customerTotals = invoices.stream()
+            .collect(Collectors.groupingBy(
+                Invoice::getCustomerId,
+                Collectors.summingDouble(Invoice::getAmount)
+            ));
+        
+        return Map.of(
+            "customerBreakdown", customerCounts,
+            "customerTotals", customerTotals,
+            "amountDistribution", Map.of(
+                "under1000", invoices.stream().filter(i -> i.getAmount() < 1000).count(),
+                "between1000and2000", invoices.stream().filter(i -> i.getAmount() >= 1000 && i.getAmount() < 2000).count(),
+                "over2000", invoices.stream().filter(i -> i.getAmount() >= 2000).count()
+            )
+        );
+    }
+
+    private Map<String, Object> generateAnalyticsReport(List<Invoice> invoices) {
+        return Map.of(
+            "summary", generateSummaryReport(invoices),
+            "detailed", generateDetailedReport(invoices),
+            "trends", Map.of(
+                "topCustomerByAmount", getTopCustomerByAmount(invoices),
+                "topCustomerByCount", invoices.stream()
+                    .collect(Collectors.groupingBy(Invoice::getCustomerId, Collectors.counting()))
+                    .entrySet().stream()
+                    .max(Map.Entry.comparingByValue())
+                    .map(Map.Entry::getKey)
+                    .orElse("N/A")
+            )
+        );
     }
 
 }
