@@ -827,4 +827,109 @@ class InvoiceRestControllerTest {
                 .param("checkBy", "invalid_type"))
                 .andExpect(status().isBadRequest());
     }
+
+    @Test
+    @DisplayName("Should export summary report successfully")
+    void shouldExportSummaryReportSuccessfully() throws Exception {
+        // Given
+        ExportRequest exportRequest = new ExportRequest();
+        exportRequest.setFormat("summary");
+        exportRequest.setReportTitle("Test Summary Report");
+        
+        given(billingRepository.findAll()).willReturn(createSampleInvoicesWithData());
+    
+        // When & Then
+        mockMvc.perform(post("/billing/v1/reports/export")
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(exportRequest)))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.summary.totalInvoices").value(5))
+                .andExpect(jsonPath("$.summary.totalAmount").value(4083.5)) // Sum of all amounts
+                .andExpect(jsonPath("$.summary.uniqueCustomers").value(4))
+                .andExpect(jsonPath("$.exportMetadata.exportFormat").value("summary"))
+                .andExpect(jsonPath("$.exportMetadata.totalInvoicesExported").value(5));
+    }
+    
+    @Test
+    @DisplayName("Should export detailed report successfully")
+    void shouldExportDetailedReportSuccessfully() throws Exception {
+        // Given
+        ExportRequest exportRequest = new ExportRequest();
+        exportRequest.setFormat("detailed");
+        exportRequest.setCustomerIds(Arrays.asList("12", "13"));
+        
+        given(billingRepository.findAll()).willReturn(createSampleInvoicesWithData());
+    
+        // When & Then
+        mockMvc.perform(post("/billing/v1/reports/export")
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(exportRequest)))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.invoices").isArray())
+                .andExpect(jsonPath("$.details.customerBreakdown").exists())
+                .andExpect(jsonPath("$.details.customerTotals").exists())
+                .andExpect(jsonPath("$.exportMetadata.totalInvoicesExported").value(3)); // 2 from customer 12 + 1 from customer 13
+    }
+    
+    @Test
+    @DisplayName("Should export analytics report successfully")
+    void shouldExportAnalyticsReportSuccessfully() throws Exception {
+        // Given
+        ExportRequest exportRequest = new ExportRequest();
+        exportRequest.setFormat("analytics");
+        exportRequest.setMinAmount(500.0);
+        
+        given(billingRepository.findAll()).willReturn(createSampleInvoicesWithData());
+    
+        // When & Then
+        mockMvc.perform(post("/billing/v1/reports/export")
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(exportRequest)))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.analytics.summary").exists())
+                .andExpect(jsonPath("$.analytics.detailed").exists())
+                .andExpect(jsonPath("$.analytics.trends").exists())
+                .andExpect(jsonPath("$.exportMetadata.exportFormat").value("analytics"));
+    }
+    
+    @Test
+    @DisplayName("Should return 400 for invalid export format")
+    void shouldReturn400ForInvalidExportFormat() throws Exception {
+        // Given
+        ExportRequest exportRequest = new ExportRequest();
+        exportRequest.setFormat("invalid_format");
+        
+        given(billingRepository.findAll()).willReturn(createSampleInvoicesWithData());
+    
+        // When & Then
+        mockMvc.perform(post("/billing/v1/reports/export")
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(exportRequest)))
+                .andExpect(status().isBadRequest());
+    }
+    
+    @Test
+    @DisplayName("Should return 404 when no invoices match export criteria")
+    void shouldReturn404WhenNoInvoicesMatchExportCriteria() throws Exception {
+        // Given
+        ExportRequest exportRequest = new ExportRequest();
+        exportRequest.setFormat("summary");
+        exportRequest.setCustomerIds(Arrays.asList("999")); // Non-existent customer
+        
+        given(billingRepository.findAll()).willReturn(createSampleInvoicesWithData());
+    
+        // When & Then
+        mockMvc.perform(post("/billing/v1/reports/export")
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(exportRequest)))
+                .andExpect(status().isNotFound());
+    }
 }
