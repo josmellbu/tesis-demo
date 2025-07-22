@@ -932,4 +932,152 @@ class InvoiceRestControllerTest {
                 .content(objectMapper.writeValueAsString(exportRequest)))
                 .andExpect(status().isNotFound());
     }
+
+    @Test
+    @DisplayName("Should perform batch update successfully")
+    void shouldPerformBatchUpdateSuccessfully() throws Exception {
+        // Given
+        BatchUpdateRequest batchRequest = new BatchUpdateRequest();
+        
+        Map<String, Object> criteria = new HashMap<>();
+        criteria.put("customerId", "12");
+        criteria.put("minAmount", 1000.0);
+        batchRequest.setCriteria(criteria);
+        
+        Map<String, Object> updates = new HashMap<>();
+        updates.put("detail", "UPDATED - Batch processed");
+        updates.put("amount", 1500.0);
+        batchRequest.setUpdates(updates);
+        
+        batchRequest.setDescription("Update all invoices for customer 12 with amount >= 1000");
+        
+        // Mock data
+        List<Invoice> invoices = createSampleInvoicesWithData();
+        given(billingRepository.findAll()).willReturn(invoices);
+        
+        // Mock save operations
+        invoices.forEach(invoice -> {
+            if ("12".equals(invoice.getCustomerId()) && invoice.getAmount() >= 1000.0) {
+                Invoice updatedInvoice = new Invoice(invoice.getId(), invoice.getCustomerId(), 
+                        invoice.getNumber(), "UPDATED - Batch processed", 1500.0);
+                given(billingRepository.save(invoice)).willReturn(updatedInvoice);
+                
+                InvoiceResponse response = new InvoiceResponse();
+                response.setInvoiceId(invoice.getId());
+                response.setCustomer(invoice.getCustomerId());
+                response.setDetail("UPDATED - Batch processed");
+                response.setAmount(1500.0);
+                given(invoiceResponseMapper.InvoiceToInvoiceResponse(updatedInvoice)).willReturn(response);
+            }
+        });
+    
+        // When & Then
+        mockMvc.perform(post("/billing/v1/batch-update")
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(batchRequest)))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.operationType").value("BATCH_UPDATE"))
+                .andExpect(jsonPath("$.successCount").value(2)) // Customer 12 has 2 invoices >= 1000
+                .andExpect(jsonPath("$.errorCount").value(0))
+                .andExpect(jsonPath("$.message").value("Batch update completed: 2 invoices updated, 0 errors"));
+    }
+    
+    @Test
+    @DisplayName("Should handle batch update with validation errors")
+    void shouldHandleBatchUpdateWithValidationErrors() throws Exception {
+        // Given
+        BatchUpdateRequest batchRequest = new BatchUpdateRequest();
+        
+        Map<String, Object> criteria = new HashMap<>();
+        criteria.put("customerId", "12");
+        batchRequest.setCriteria(criteria);
+        
+        Map<String, Object> updates = new HashMap<>();
+        updates.put("amount", -100.0); // Invalid negative amount
+        batchRequest.setUpdates(updates);
+        
+        given(billingRepository.findAll()).willReturn(createSampleInvoicesWithData());
+    
+        // When & Then
+        mockMvc.perform(post("/billing/v1/batch-update")
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(batchRequest)))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.successCount").value(0))
+                .andExpect(jsonPath("$.errorCount").value(2)) // Both customer 12 invoices should fail
+                .andExpect(jsonPath("$.errors[0]").value(Matchers.containsString("Amount must be greater than zero")));
+    }
+    
+    @Test
+    @DisplayName("Should return 404 when no invoices match batch criteria")
+    void shouldReturn404WhenNoInvoicesMatchBatchCriteria() throws Exception {
+        // Given
+        BatchUpdateRequest batchRequest = new BatchUpdateRequest();
+        
+        Map<String, Object> criteria = new HashMap<>();
+        criteria.put("customerId", "999"); // Non-existent customer
+        batchRequest.setCriteria(criteria);
+        
+        Map<String, Object> updates = new HashMap<>();
+        updates.put("detail", "Updated");
+        batchRequest.setUpdates(updates);
+        
+        given(billingRepository.findAll()).willReturn(createSampleInvoicesWithData());
+    
+        // When & Then
+        mockMvc.perform(post("/billing/v1/batch-update")
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(batchRequest)))
+                .andExpect(status().isNotFound());
+    }
+    
+    @Test
+    @DisplayName("Should perform batch update by detail criteria")
+    void shouldPerformBatchUpdateByDetailCriteria() throws Exception {
+        // Given
+        BatchUpdateRequest batchRequest = new BatchUpdateRequest();
+        
+        Map<String, Object> criteria = new HashMap<>();
+        criteria.put("detailContains", "equipos");
+        batchRequest.setCriteria(criteria);
+        
+        Map<String, Object> updates = new HashMap<>();
+        updates.put("detail", "EQUIPOS INFORMÁTICOS - PROCESADO");
+        batchRequest.setUpdates(updates);
+        
+        List<Invoice> invoices = createSampleInvoicesWithData();
+        given(billingRepository.findAll()).willReturn(invoices);
+        
+        // Mock save for the invoice that contains "equipos"
+        Invoice targetInvoice = invoices.stream()
+                .filter(inv -> inv.getDetail() != null && inv.getDetail().toLowerCase().contains("equipos"))
+                .findFirst()
+                .orElse(null);
+        
+        if (targetInvoice != null) {
+            Invoice updatedInvoice = new Invoice(targetInvoice.getId(), targetInvoice.getCustomerId(),
+                    targetInvoice.getNumber(), "EQUIPOS INFORMÁTICOS - PROCESADO", targetInvoice.getAmount());
+            given(billingRepository.save(targetInvoice)).willReturn(updatedInvoice);
+            
+            InvoiceResponse response = new InvoiceResponse();
+            response.setInvoiceId(targetInvoice.getId());
+            response.setDetail("EQUIPOS INFORMÁTICOS - PROCESADO");
+            given(invoiceResponseMapper.InvoiceToInvoiceResponse(updatedInvoice)).willReturn(response);
+        }
+    
+        // When & Then
+        mockMvc.perform(post("/billing/v1/batch-update")
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(batchRequest)))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.successCount").value(1)) // Only one invoice contains "equipos"
+                .andExpect(jsonPath("$.errorCount").value(0));
+    }
 }
