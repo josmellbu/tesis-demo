@@ -6,6 +6,8 @@ import com.example.billing.dto.*;
 import com.example.billing.entities.Invoice;
 import com.example.billing.respository.InvoiceRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
+
+import org.hamcrest.Matchers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
@@ -84,7 +86,7 @@ class InvoiceRestControllerTest {
         sampleInvoiceList = Arrays.asList(sampleInvoice1, sampleInvoice2);
         sampleResponseList = Arrays.asList(sampleInvoiceResponse1, sampleInvoiceResponse2);
     }
-
+    
     @Test
     @DisplayName("Should return all invoices when invoices exist")
     void shouldReturnAllInvoicesWhenInvoicesExist() throws Exception {
@@ -412,5 +414,97 @@ class InvoiceRestControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(updates)))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("Should create bulk invoices successfully")
+    void shouldCreateBulkInvoicesSuccessfully() throws Exception {
+        // Given
+        InvoiceRequest request1 = new InvoiceRequest();
+        request1.setCustomer("13");
+        request1.setNumber("INV-001");
+        request1.setDetail("Bulk invoice 1");
+        request1.setAmount(100.0);
+
+        InvoiceRequest request2 = new InvoiceRequest();
+        request2.setCustomer("14");
+        request2.setNumber("INV-002");
+        request2.setDetail("Bulk invoice 2");
+        request2.setAmount(200.0);
+
+        BulkInvoiceRequest bulkRequest = new BulkInvoiceRequest();
+        bulkRequest.setInvoices(Arrays.asList(request1, request2));
+
+        // Mock successful saves
+        Invoice savedInvoice1 = new Invoice("uuid1", "13", "INV-001", "Bulk invoice 1", 100.0);
+        Invoice savedInvoice2 = new Invoice("uuid2", "14", "INV-002", "Bulk invoice 2", 200.0);
+        
+        InvoiceResponse response1 = new InvoiceResponse();
+        response1.setInvoiceId("uuid1");
+        response1.setCustomer("13");
+        
+        InvoiceResponse response2 = new InvoiceResponse();
+        response2.setInvoiceId("uuid2");
+        response2.setCustomer("14");
+
+        given(invoiceRequestMapper.InvoiceRequestToInvoice(any(InvoiceRequest.class)))
+                .willReturn(savedInvoice1, savedInvoice2);
+        given(billingRepository.save(any(Invoice.class)))
+                .willReturn(savedInvoice1, savedInvoice2);
+        given(invoiceResponseMapper.InvoiceToInvoiceResponse(any(Invoice.class)))
+                .willReturn(response1, response2);
+
+        // When & Then
+        mockMvc.perform(post("/billing/v1/bulk")
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(bulkRequest)))
+                .andExpect(status().isCreated())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.successCount").value(2))
+                .andExpect(jsonPath("$.errorCount").value(0))
+                .andExpect(jsonPath("$.operationType").value("BULK_CREATE"));
+
+        verify(billingRepository, times(2)).save(any(Invoice.class));
+    }
+
+    @Test
+    @DisplayName("Should handle bulk creation with validation errors")
+    void shouldHandleBulkCreationWithValidationErrors() throws Exception {
+        // Given - One valid, one invalid invoice
+        InvoiceRequest validRequest = new InvoiceRequest();
+        validRequest.setCustomer("13");
+        validRequest.setNumber("INV-001");
+        validRequest.setAmount(100.0);
+
+        InvoiceRequest invalidRequest = new InvoiceRequest();
+        // Missing customer and invalid amount
+        invalidRequest.setNumber("INV-002");
+        invalidRequest.setAmount(-50.0);
+
+        BulkInvoiceRequest bulkRequest = new BulkInvoiceRequest();
+        bulkRequest.setInvoices(Arrays.asList(validRequest, invalidRequest));
+
+        // Mock successful save for valid invoice
+        Invoice savedInvoice = new Invoice("uuid1", "13", "INV-001", null, 100.0);
+        InvoiceResponse response = new InvoiceResponse();
+        response.setInvoiceId("uuid1");
+
+        given(invoiceRequestMapper.InvoiceRequestToInvoice(any(InvoiceRequest.class)))
+                .willReturn(savedInvoice);
+        given(billingRepository.save(any(Invoice.class))).willReturn(savedInvoice);
+        given(invoiceResponseMapper.InvoiceToInvoiceResponse(any(Invoice.class)))
+                .willReturn(response);
+
+        // When & Then
+        mockMvc.perform(post("/billing/v1/bulk")
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(bulkRequest)))
+                .andExpect(status().isCreated())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.successCount").value(1))
+                .andExpect(jsonPath("$.errorCount").value(1))
+                .andExpect(jsonPath("$.errors[0]").value(Matchers.containsString("Customer ID is required")));
     }
 }
