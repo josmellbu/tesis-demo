@@ -507,4 +507,33 @@ class InvoiceRestControllerTest {
                 .andExpect(jsonPath("$.errorCount").value(1))
                 .andExpect(jsonPath("$.errors[0]").value(Matchers.containsString("Customer ID is required")));
     }
+
+    @Test
+    @DisplayName("Should delete bulk invoices successfully")
+    void shouldDeleteBulkInvoicesSuccessfully() throws Exception {
+        // Given
+        List<String> invoiceIds = Arrays.asList(
+                "3d646c6d-0ae1-453a-9203-227bb0acb7f7", 
+                "1ca2a007-42ae-455d-aa1f-a9f21edc2a56"
+        );
+
+        given(billingRepository.findById("3d646c6d-0ae1-453a-9203-227bb0acb7f7"))
+                .willReturn(Optional.of(sampleInvoice1));
+        given(billingRepository.findById("1ca2a007-42ae-455d-aa1f-a9f21edc2a56"))
+                .willReturn(Optional.of(sampleInvoice2));
+
+        // When & Then
+        mockMvc.perform(delete("/billing/v1/bulk")
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(invoiceIds)))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.successCount").value(2))
+                .andExpect(jsonPath("$.errorCount").value(0))
+                .andExpect(jsonPath("$.operationType").value("BULK_DELETE"));
+
+        verify(billingRepository).delete(sampleInvoice1);
+        verify(billingRepository).delete(sampleInvoice2);
+    }
 }
