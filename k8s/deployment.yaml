@@ -19,6 +19,7 @@ spec:
       labels:
         app: tesis-demo
       annotations:
+        # Force pod restart on every deployment
         deployment.kubernetes.io/revision: "${IMAGE_TAG}"
     spec:
       containers:
@@ -44,16 +45,43 @@ spec:
             secretKeyRef:
               name: mongo-secret
               key: mongo-root-password
-        # Health checks
+        - name: APP_USER
+          value: "admin"
+        
+        # Health checks - FIXED to use correct actuator endpoints
         livenessProbe:
           httpGet:
             path: /actuator/health
             port: 8080
-          initialDelaySeconds: 60
+          initialDelaySeconds: 90  # Increased to allow app startup
           periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 5
+          
         readinessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8080
+          initialDelaySeconds: 60  # Increased to allow app startup
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 3
+          
+        # Startup probe - for slow starting applications
+        startupProbe:
           httpGet:
             path: /actuator/health
             port: 8080
           initialDelaySeconds: 30
           periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 12  # Allow up to 2 minutes for startup
+          
+        # Resource limits (optional but recommended)
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
