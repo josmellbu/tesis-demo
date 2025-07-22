@@ -545,6 +545,60 @@ public class InvoiceRestController {
         return ResponseEntity.ok(result);
     }
 
+    @Operation(
+        description = "Get recent invoices with configurable filters and sorting",
+        summary = "Retrieve most recent invoices based on creation order"
+    )
+    @GetMapping("/recent")
+    public ResponseEntity<Map<String, Object>> getRecentInvoices(
+        @Parameter(description = "Number of recent invoices to return") 
+        @RequestParam(value = "limit", defaultValue = "10") int limit,
+        @Parameter(description = "Minimum amount filter") 
+        @RequestParam(value = "minAmount", required = false) Double minAmount,
+        @Parameter(description = "Customer ID filter") 
+        @RequestParam(value = "customerId", required = false) String customerId
+    ) throws BusinessRuleException {
+        
+        List<Invoice> allInvoices = billingRepository.findAll();
+        
+        if (allInvoices.isEmpty()) {
+            throw new BusinessRuleException("NOT_FOUND", "No invoices available", HttpStatus.NOT_FOUND);
+        }
+        
+        List<Invoice> filteredInvoices = allInvoices.stream()
+            .filter(invoice -> minAmount == null || invoice.getAmount() >= minAmount)
+            .filter(invoice -> customerId == null || customerId.equals(invoice.getCustomerId()))
+            .collect(Collectors.toList());
+        
+        List<Invoice> recentInvoices = filteredInvoices.stream()
+            .sorted((a, b) -> b.getId().compareTo(a.getId()))
+            .limit(limit)
+            .collect(Collectors.toList());
+        
+        if (recentInvoices.isEmpty()) {
+            throw new BusinessRuleException("NOT_FOUND", "No recent invoices match the specified criteria", HttpStatus.NOT_FOUND);
+        }
+        
+        List<InvoiceResponse> responses = irspm.InvoiceListToInvoiceResponseList(recentInvoices);
+        
+        Map<String, Object> result = new HashMap<>();
+        result.put("recentInvoices", responses);
+        result.put("totalFound", recentInvoices.size());
+        result.put("filters", Map.of(
+            "limit", limit,
+            "minAmount", minAmount != null ? minAmount : "none",
+            "customerId", customerId != null ? customerId : "all"
+        ));
+        result.put("summary", Map.of(
+            "totalAmount", recentInvoices.stream().mapToDouble(Invoice::getAmount).sum(),
+            "averageAmount", recentInvoices.stream().mapToDouble(Invoice::getAmount).average().orElse(0.0),
+            "uniqueCustomers", recentInvoices.stream().map(Invoice::getCustomerId).distinct().count()
+        ));
+        result.put("generatedAt", LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+        
+        return ResponseEntity.ok(result);
+    }
+
     private boolean matchesSearchCriteria(Invoice invoice, InvoiceSearchRequest searchRequest) {
         if (searchRequest.getCustomerId() != null && !searchRequest.getCustomerId().isEmpty()) {
             if (!searchRequest.getCustomerId().equals(invoice.getCustomerId())) {
