@@ -596,13 +596,120 @@ class InvoiceRestControllerTest {
 
         // When & Then
         mockMvc.perform(post("/billing/v1/validate")
-                .with(csrf())
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(requestWithDuplicateNumber)))
-                .andExpect(status().isOk())
-                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath("$.valid").value(true))
-                .andExpect(jsonPath("$.errors").isEmpty())
-                .andExpect(jsonPath("$.warnings[0]").value("Invoice number already exists in the system"));
+            .with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(requestWithDuplicateNumber)))
+            .andExpect(status().isOk())
+            .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+            .andExpect(jsonPath("$.valid").value(true))
+            .andExpect(jsonPath("$.errors").isEmpty())
+            .andExpect(jsonPath("$.warnings[0]").value("Invoice number already exists in the system"));
+    }
+
+    @Test
+    @DisplayName("Should return top customers by total amount successfully")
+    void shouldReturnTopCustomersByTotalAmountSuccessfully() throws Exception {
+        // Given - usando los datos reales del usuario
+        Invoice invoice1 = new Invoice("3d646c6d-0ae1-453a-9203-227bb0acb7f7", "12", "12", 
+                "Compra de equipos informáticos - ACTUALIZADO", 1200.5);
+        Invoice invoice2 = new Invoice("1ca2a007-42ae-455d-aa1f-a9f21edc2a56", "12", "12", 
+                "algo", 1333.0);
+        Invoice invoice3 = new Invoice("c3d311be-a08c-4f67-bf3e-fc7e1b8f12ca", "13", "INV-001", 
+                "Factura de prueba 1", 500.0);
+        Invoice invoice4 = new Invoice("67cc1d09-9e20-4441-918c-4c396d3aa382", "14", "INV-002", 
+                "Factura de prueba 2", 750.0);
+        Invoice invoice5 = new Invoice("6fc25ddf-c8c6-4afd-a1c5-8a989279a0cb", "15", "INV-003", 
+                "Factura de prueba 3", 300.0);
+        
+        List<Invoice> invoices = Arrays.asList(invoice1, invoice2, invoice3, invoice4, invoice5);
+        given(billingRepository.findAll()).willReturn(invoices);
+    
+        // When & Then
+        mockMvc.perform(get("/billing/v1/top-customers")
+            .param("metric", "total_amount")
+            .param("limit", "3"))
+            .andExpect(status().isOk())
+            .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+            .andExpect(jsonPath("$.topCustomers").isArray())
+            .andExpect(jsonPath("$.topCustomers[0].customerId").value("12")) // Customer 12 has highest total (2533.5)
+            .andExpect(jsonPath("$.topCustomers[0].totalAmount").value(2533.5))
+            .andExpect(jsonPath("$.topCustomers[1].customerId").value("14")) // Customer 14 has 750.0
+            .andExpect(jsonPath("$.topCustomers[1].totalAmount").value(750.0))
+            .andExpect(jsonPath("$.metric").value("Total Amount"))
+            .andExpect(jsonPath("$.totalCustomers").value(4));
+    }
+    
+    @Test
+    @DisplayName("Should return top customers by invoice count successfully")
+    void shouldReturnTopCustomersByInvoiceCountSuccessfully() throws Exception {
+        // Given
+        given(billingRepository.findAll()).willReturn(createSampleInvoicesWithData());
+    
+        // When & Then
+        mockMvc.perform(get("/billing/v1/top-customers")
+            .param("metric", "count")
+            .param("limit", "2"))
+            .andExpect(status().isOk())
+            .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+            .andExpect(jsonPath("$.topCustomers").isArray())
+            .andExpect(jsonPath("$.topCustomers[0].customerId").value("12")) // Customer 12 has 2 invoices
+            .andExpect(jsonPath("$.topCustomers[0].invoiceCount").value(2))
+            .andExpect(jsonPath("$.metric").value("Invoice Count"));
+    }
+    
+    @Test
+    @DisplayName("Should return top customers by average amount successfully")
+    void shouldReturnTopCustomersByAverageAmountSuccessfully() throws Exception {
+        // Given
+        given(billingRepository.findAll()).willReturn(createSampleInvoicesWithData());
+    
+        // When & Then
+        mockMvc.perform(get("/billing/v1/top-customers")
+            .param("metric", "average_amount")
+            .param("limit", "3"))
+            .andExpect(status().isOk())
+            .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+            .andExpect(jsonPath("$.topCustomers").isArray())
+            .andExpect(jsonPath("$.topCustomers[0].customerId").value("12")) // Customer 12 has highest average
+            .andExpect(jsonPath("$.topCustomers[0].averageAmount").value(1266.75)) // (1200.5 + 1333) / 2
+            .andExpect(jsonPath("$.metric").value("Average Amount"));
+    }
+    
+    @Test
+    @DisplayName("Should return 400 for invalid top customers metric")
+    void shouldReturn400ForInvalidTopCustomersMetric() throws Exception {
+        // Given
+        given(billingRepository.findAll()).willReturn(createSampleInvoicesWithData());
+    
+        // When & Then
+        mockMvc.perform(get("/billing/v1/top-customers")
+                .param("metric", "invalid_metric"))
+                .andExpect(status().isBadRequest());
+    }
+    
+    @Test
+    @DisplayName("Should return 404 when no invoices for top customers")
+    void shouldReturn404WhenNoInvoicesForTopCustomers() throws Exception {
+        // Given
+        given(billingRepository.findAll()).willReturn(Collections.emptyList());
+    
+        // When & Then
+        mockMvc.perform(get("/billing/v1/top-customers"))
+                .andExpect(status().isNotFound());
+    }
+
+    // Helper method to provide sample invoices for top customer tests
+    private List<Invoice> createSampleInvoicesWithData() {
+        Invoice invoice1 = new Invoice("3d646c6d-0ae1-453a-9203-227bb0acb7f7", "12", "12", 
+                "Compra de equipos informáticos", 1200.5);
+        Invoice invoice2 = new Invoice("1ca2a007-42ae-455d-aa1f-a9f21edc2a56", "12", "12", 
+                "algo", 1333.0);
+        Invoice invoice3 = new Invoice("c3d311be-a08c-4f67-bf3e-fc7e1b8f12ca", "13", "INV-001", 
+                "Factura de prueba 1", 500.0);
+        Invoice invoice4 = new Invoice("67cc1d09-9e20-4441-918c-4c396d3aa382", "14", "INV-002", 
+                "Factura de prueba 2", 750.0);
+        Invoice invoice5 = new Invoice("6fc25ddf-c8c6-4afd-a1c5-8a989279a0cb", "15", "INV-003", 
+                "Factura de prueba 3", 300.0);
+        return Arrays.asList(invoice1, invoice2, invoice3, invoice4, invoice5);
     }
 }
