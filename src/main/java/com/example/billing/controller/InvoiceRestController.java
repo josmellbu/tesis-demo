@@ -415,7 +415,6 @@ public class InvoiceRestController {
         List<String> errors = new ArrayList<>();
         List<String> warnings = new ArrayList<>();
         
-        // Validation logic
         if (request.getCustomer() == null || request.getCustomer().trim().isEmpty()) {
             errors.add("Customer ID is required");
         } if (request.getNumber() == null || request.getNumber().trim().isEmpty()) {
@@ -440,6 +439,110 @@ public class InvoiceRestController {
         validationResult.put("timestamp", LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
         
         return ResponseEntity.ok(validationResult);
+    }
+
+    @Operation(
+        description = "Get top customers by various metrics (invoice count, total amount, average amount)",
+        summary = "Analytics endpoint for top performing customers"
+    )
+    @GetMapping("/top-customers")
+    public ResponseEntity<Map<String, Object>> getTopCustomers(
+        @Parameter(description = "Metric type: count, total_amount, average_amount") 
+        @RequestParam(value = "metric", defaultValue = "total_amount") String metric,
+        @Parameter(description = "Number of top customers to return") 
+        @RequestParam(value = "limit", defaultValue = "5") int limit
+    ) throws BusinessRuleException {
+        
+        List<Invoice> allInvoices = billingRepository.findAll();
+        
+        if (allInvoices.isEmpty()) {
+            throw new BusinessRuleException("NOT_FOUND", "No invoices available for customer analysis", HttpStatus.NOT_FOUND);
+        }
+        
+        Map<String, Object> result = new HashMap<>();
+        
+        switch (metric.toLowerCase()) {
+            case "count":
+                Map<String, Long> customerCounts = allInvoices.stream()
+                    .collect(Collectors.groupingBy(Invoice::getCustomerId, Collectors.counting()));
+                
+                List<Map<String, Object>> topByCount = customerCounts.entrySet().stream()
+                    .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+                    .limit(limit)
+                    .map(entry -> {
+                        Map<String, Object> customerInfo = new HashMap<>();
+                        customerInfo.put("customerId", entry.getKey());
+                        customerInfo.put("invoiceCount", entry.getValue());
+                        customerInfo.put("totalAmount", allInvoices.stream()
+                            .filter(inv -> inv.getCustomerId().equals(entry.getKey()))
+                            .mapToDouble(Invoice::getAmount)
+                            .sum());
+                        return customerInfo;
+                    })
+                    .collect(Collectors.toList());
+                
+                result.put("topCustomers", topByCount);
+                result.put("metric", "Invoice Count");
+                break;
+                
+            case "total_amount":
+                Map<String, Double> customerTotals = allInvoices.stream()
+                    .collect(Collectors.groupingBy(
+                        Invoice::getCustomerId,
+                        Collectors.summingDouble(Invoice::getAmount)
+                    ));
+                
+                List<Map<String, Object>> topByAmount = customerTotals.entrySet().stream()
+                    .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
+                    .limit(limit)
+                    .map(entry -> {
+                        Map<String, Object> customerInfo = new HashMap<>();
+                        customerInfo.put("customerId", entry.getKey());
+                        customerInfo.put("totalAmount", entry.getValue());
+                        customerInfo.put("invoiceCount", allInvoices.stream()
+                            .filter(inv -> inv.getCustomerId().equals(entry.getKey()))
+                            .count());
+                        return customerInfo;
+                    })
+                    .collect(Collectors.toList());
+                
+                result.put("topCustomers", topByAmount);
+                result.put("metric", "Total Amount");
+                break;
+                
+            case "average_amount":
+                Map<String, Double> customerAverages = allInvoices.stream()
+                    .collect(Collectors.groupingBy(
+                        Invoice::getCustomerId,
+                        Collectors.averagingDouble(Invoice::getAmount)
+                    ));
+                
+                List<Map<String, Object>> topByAverage = customerAverages.entrySet().stream()
+                    .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
+                    .limit(limit)
+                    .map(entry -> {
+                        Map<String, Object> customerInfo = new HashMap<>();
+                        customerInfo.put("customerId", entry.getKey());
+                        customerInfo.put("averageAmount", entry.getValue());
+                        customerInfo.put("invoiceCount", allInvoices.stream()
+                            .filter(inv -> inv.getCustomerId().equals(entry.getKey()))
+                            .count());
+                        return customerInfo;
+                    })
+                    .collect(Collectors.toList());
+                
+                result.put("topCustomers", topByAverage);
+                result.put("metric", "Average Amount");
+                break;
+                
+            default:
+                throw new BusinessRuleException("INVALID_METRIC", "Invalid metric type. Use: count, total_amount, or average_amount", HttpStatus.BAD_REQUEST);
+        }
+        
+        result.put("generatedAt", LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+        result.put("totalCustomers", allInvoices.stream().map(Invoice::getCustomerId).distinct().count());
+        
+        return ResponseEntity.ok(result);
     }
 
     private boolean matchesSearchCriteria(Invoice invoice, InvoiceSearchRequest searchRequest) {
