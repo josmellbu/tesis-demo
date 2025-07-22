@@ -30,6 +30,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -266,6 +267,45 @@ public class InvoiceRestController {
         }
         
         return irspm.InvoiceListToInvoiceResponseList(filteredInvoices);
+    }
+
+    @Operation(
+        description = "Partial update of an invoice",
+        summary = "Update specific fields of an invoice without affecting others"
+    )
+    @PatchMapping("/{id}")
+    public ResponseEntity<InvoiceResponse> patchInvoice(
+            @PathVariable("id") String id,
+            @RequestBody Map<String, Object> updates) throws BusinessRuleException {
+        
+        Optional<Invoice> optionalInvoice = billingRepository.findById(id);
+        if (!optionalInvoice.isPresent()) {
+            throw new BusinessRuleException("NOT_FOUND", "Invoice with ID " + id + " not found", HttpStatus.NOT_FOUND);
+        }
+        
+        Invoice invoice = optionalInvoice.get();
+        
+        updates.forEach((key, value) -> {
+            switch (key) {
+                case "detail":
+                    invoice.setDetail((String) value);
+                    break;
+                case "amount":
+                    invoice.setAmount(((Number) value).doubleValue());
+                    break;
+                case "number":
+                    invoice.setNumber((String) value);
+                    break;
+                case "customerId":
+                    invoice.setCustomerId((String) value);
+                    break;
+            }
+        });
+        
+        Invoice savedInvoice = billingRepository.save(invoice);
+        InvoiceResponse response = irspm.InvoiceToInvoiceResponse(savedInvoice);
+        
+        return ResponseEntity.ok(response);
     }
 
     private boolean matchesSearchCriteria(Invoice invoice, InvoiceSearchRequest searchRequest) {
