@@ -405,6 +405,43 @@ public class InvoiceRestController {
         return ResponseEntity.ok(response);
     }
 
+    @Operation(
+        description = "Validate invoice data without saving",
+        summary = "Dry-run validation for invoice creation"
+    )
+    @PostMapping("/validate")
+    public ResponseEntity<Map<String, Object>> validateInvoice(@RequestBody InvoiceRequest request) {
+        Map<String, Object> validationResult = new HashMap<>();
+        List<String> errors = new ArrayList<>();
+        List<String> warnings = new ArrayList<>();
+        
+        // Validation logic
+        if (request.getCustomer() == null || request.getCustomer().trim().isEmpty()) {
+            errors.add("Customer ID is required");
+        } if (request.getNumber() == null || request.getNumber().trim().isEmpty()) {
+            errors.add("Invoice number is required");
+        } if (request.getAmount() <= 0) {
+            errors.add("Invoice amount must be greater than zero");
+        } if (request.getAmount() > 1000000) {
+            warnings.add("Invoice amount is unusually high");
+        }
+        
+        List<Invoice> existingInvoices = billingRepository.findAll();
+        boolean duplicateNumber = existingInvoices.stream()
+            .anyMatch(invoice -> request.getNumber() != null && request.getNumber().equals(invoice.getNumber()));
+        
+        if (duplicateNumber) {
+            warnings.add("Invoice number already exists in the system");
+        }
+        
+        validationResult.put("valid", errors.isEmpty());
+        validationResult.put("errors", errors);
+        validationResult.put("warnings", warnings);
+        validationResult.put("timestamp", LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+        
+        return ResponseEntity.ok(validationResult);
+    }
+
     private boolean matchesSearchCriteria(Invoice invoice, InvoiceSearchRequest searchRequest) {
         if (searchRequest.getCustomerId() != null && !searchRequest.getCustomerId().isEmpty()) {
             if (!searchRequest.getCustomerId().equals(invoice.getCustomerId())) {
