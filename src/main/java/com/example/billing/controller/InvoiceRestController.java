@@ -712,7 +712,6 @@ public class InvoiceRestController {
             throw new BusinessRuleException("NOT_FOUND", "No invoices available for export", HttpStatus.NOT_FOUND);
         }
         
-        // Apply filters
         List<Invoice> filteredInvoices = allInvoices.stream()
             .filter(invoice -> exportRequest.getCustomerIds() == null || 
                     exportRequest.getCustomerIds().isEmpty() || 
@@ -729,7 +728,6 @@ public class InvoiceRestController {
         
         Map<String, Object> exportData = new HashMap<>();
         
-        // Generate the export based on format
         switch (exportRequest.getFormat().toLowerCase()) {
             case "summary":
                 exportData.put("summary", generateSummaryReport(filteredInvoices));
@@ -745,7 +743,6 @@ public class InvoiceRestController {
                 throw new BusinessRuleException("INVALID_FORMAT", "Invalid export format. Use: summary, detailed, or analytics", HttpStatus.BAD_REQUEST);
         }
         
-        // Add metadata
         exportData.put("exportMetadata", Map.of(
             "generatedAt", LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
             "totalInvoicesExported", filteredInvoices.size(),
