@@ -247,8 +247,8 @@ public class InvoiceRestController {
     )
     @GetMapping("/amount-range")
     public List<InvoiceResponse> getInvoicesByAmountRange(
-            @Parameter(description = "Minimum amount") @RequestParam double minAmount,
-            @Parameter(description = "Maximum amount") @RequestParam double maxAmount) throws BusinessRuleException {
+            @Parameter(description = "Minimum amount") @RequestParam("minAmount") double minAmount,
+            @Parameter(description = "Maximum amount") @RequestParam("maxAmount") double maxAmount) throws BusinessRuleException {
         
         if (minAmount > maxAmount) {
             throw new BusinessRuleException("INVALID_RANGE", "Minimum amount cannot be greater than maximum amount", HttpStatus.BAD_REQUEST);
