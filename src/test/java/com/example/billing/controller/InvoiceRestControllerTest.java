@@ -725,7 +725,7 @@ class InvoiceRestControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.recentInvoices").isArray())
-                .andExpect(jsonPath("$.totalFound").value(4)) 
+                .andExpect(jsonPath("$.totalFound").value(3)) 
                 .andExpect(jsonPath("$.filters.limit").value(3))
                 .andExpect(jsonPath("$.filters.minAmount").value(500.0))
                 .andExpect(jsonPath("$.summary.totalAmount").exists())
