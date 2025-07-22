@@ -333,4 +333,34 @@ class InvoiceRestControllerTest {
         mockMvc.perform(get("/billing/v1/statistics"))
                 .andExpect(status().isNotFound());
     }
+
+    
+
+    @Test
+    @DisplayName("Should get invoices by amount range successfully")
+    void shouldGetInvoicesByAmountRangeSuccessfully() throws Exception {
+        // Given
+        given(billingRepository.findAll()).willReturn(sampleInvoiceList);
+        given(invoiceResponseMapper.InvoiceListToInvoiceResponseList(anyList()))
+                .willReturn(sampleResponseList);
+
+        // When & Then
+        mockMvc.perform(get("/billing/v1/amount-range")
+                .param("minAmount", "1200")
+                .param("maxAmount", "1400"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$[0].amount").value(1200.5))
+                .andExpect(jsonPath("$[1].amount").value(1333.0));
+    }
+
+    @Test
+    @DisplayName("Should return 400 for invalid amount range")
+    void shouldReturn400ForInvalidAmountRange() throws Exception {
+        // When & Then - minAmount > maxAmount
+        mockMvc.perform(get("/billing/v1/amount-range")
+                .param("minAmount", "1500")
+                .param("maxAmount", "1000"))
+                .andExpect(status().isBadRequest());
+    }
 }
