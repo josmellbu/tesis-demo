@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.example.billing.common.InvoiceRequestMapper;
 import com.example.billing.common.InvoiceResponseMapper;
+import com.example.billing.dto.BatchUpdateRequest;
 import com.example.billing.dto.BulkInvoiceRequest;
 import com.example.billing.dto.BulkOperationResponse;
 import com.example.billing.dto.ExportRequest;
@@ -757,6 +758,70 @@ public class InvoiceRestController {
         return ResponseEntity.ok(exportData);
     }
 
+    @Operation(
+        description = "Batch update invoices based on criteria and update fields",
+        summary = "Update multiple invoices matching specific criteria"
+    )
+    @PostMapping("/batch-update")
+    public ResponseEntity<BulkOperationResponse> batchUpdateInvoices(@RequestBody BatchUpdateRequest batchRequest) throws BusinessRuleException {
+        List<Invoice> allInvoices = billingRepository.findAll();
+        
+        if (allInvoices.isEmpty()) {
+            throw new BusinessRuleException("NOT_FOUND", "No invoices available for batch update", HttpStatus.NOT_FOUND);
+        }
+        
+        long startTime = System.currentTimeMillis();
+        BulkOperationResponse response = new BulkOperationResponse();
+        response.setOperationType("BATCH_UPDATE");
+        
+        List<Invoice> matchingInvoices = allInvoices.stream()
+            .filter(invoice -> matchesBatchCriteria(invoice, batchRequest))
+            .collect(Collectors.toList());
+        
+        if (matchingInvoices.isEmpty()) {
+            throw new BusinessRuleException("NOT_FOUND", "No invoices match the specified criteria for batch update", HttpStatus.NOT_FOUND);
+        }
+        
+        List<InvoiceResponse> updatedInvoices = new ArrayList<>();
+        List<String> errors = new ArrayList<>();
+        
+        for (Invoice invoice : matchingInvoices) {
+            try {
+                if (batchRequest.getUpdates().containsKey("detail")) {
+                    invoice.setDetail((String) batchRequest.getUpdates().get("detail"));
+                }
+                if (batchRequest.getUpdates().containsKey("amount")) {
+                    double newAmount = ((Number) batchRequest.getUpdates().get("amount")).doubleValue();
+                    if (newAmount <= 0) {
+                        errors.add("Invoice " + invoice.getId() + ": Amount must be greater than zero");
+                        continue;
+                    }
+                    invoice.setAmount(newAmount);
+                }
+                if (batchRequest.getUpdates().containsKey("number")) {
+                    invoice.setNumber((String) batchRequest.getUpdates().get("number"));
+                }
+                
+                Invoice savedInvoice = billingRepository.save(invoice);
+                updatedInvoices.add(irspm.InvoiceToInvoiceResponse(savedInvoice));
+                
+            } catch (Exception e) {
+                errors.add("Invoice " + invoice.getId() + ": " + e.getMessage());
+            }
+        }
+        
+        response.setSuccessCount(updatedInvoices.size());
+        response.setErrorCount(errors.size());
+        response.setCreatedInvoices(updatedInvoices);
+        response.setErrors(errors);
+        response.setCompletedAt(LocalDateTime.now());
+        response.setDurationMs(System.currentTimeMillis() - startTime);
+        response.setMessage(String.format("Batch update completed: %d invoices updated, %d errors", 
+            updatedInvoices.size(), errors.size()));
+        
+        return ResponseEntity.ok(response);
+    }
+
     private boolean matchesSearchCriteria(Invoice invoice, InvoiceSearchRequest searchRequest) {
         if (searchRequest.getCustomerId() != null && !searchRequest.getCustomerId().isEmpty()) {
             if (!searchRequest.getCustomerId().equals(invoice.getCustomerId())) {
@@ -881,4 +946,36 @@ public class InvoiceRestController {
         );
     }
 
+    private boolean matchesBatchCriteria(Invoice invoice, BatchUpdateRequest request) {
+        if (request.getCriteria().containsKey("customerId")) {
+            String targetCustomerId = (String) request.getCriteria().get("customerId");
+            if (!targetCustomerId.equals(invoice.getCustomerId())) {
+                return false;
+            }
+        }
+        
+        if (request.getCriteria().containsKey("minAmount")) {
+            double minAmount = ((Number) request.getCriteria().get("minAmount")).doubleValue();
+            if (invoice.getAmount() < minAmount) {
+                return false;
+            }
+        }
+        
+        if (request.getCriteria().containsKey("maxAmount")) {
+            double maxAmount = ((Number) request.getCriteria().get("maxAmount")).doubleValue();
+            if (invoice.getAmount() > maxAmount) {
+                return false;
+            }
+        }
+        
+        if (request.getCriteria().containsKey("detailContains")) {
+            String searchText = (String) request.getCriteria().get("detailContains");
+            if (invoice.getDetail() == null || 
+                !invoice.getDetail().toLowerCase().contains(searchText.toLowerCase())) {
+                return false;
+            }
+        }
+        
+        return true;
+    }
 }
