@@ -536,4 +536,73 @@ class InvoiceRestControllerTest {
         verify(billingRepository).delete(sampleInvoice1);
         verify(billingRepository).delete(sampleInvoice2);
     }
+
+    @Test
+    @DisplayName("Should validate invoice successfully")
+    void shouldValidateInvoiceSuccessfully() throws Exception {
+        // Given
+        InvoiceRequest validRequest = new InvoiceRequest();
+        validRequest.setCustomer("13");
+        validRequest.setNumber("INV-NEW");
+        validRequest.setAmount(100.0);
+
+        given(billingRepository.findAll()).willReturn(sampleInvoiceList);
+
+        // When & Then
+        mockMvc.perform(post("/billing/v1/validate")
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(validRequest)))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.valid").value(true))
+                .andExpect(jsonPath("$.errors").isEmpty())
+                .andExpect(jsonPath("$.warnings").isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should validate invoice with errors")
+    void shouldValidateInvoiceWithErrors() throws Exception {
+        // Given
+        InvoiceRequest invalidRequest = new InvoiceRequest();
+        // Missing customer, invalid amount
+        invalidRequest.setNumber("INV-NEW");
+        invalidRequest.setAmount(-10.0);
+
+        given(billingRepository.findAll()).willReturn(sampleInvoiceList);
+
+        // When & Then
+        mockMvc.perform(post("/billing/v1/validate")
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(invalidRequest)))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.errors[0]").value("Customer ID is required"))
+                .andExpect(jsonPath("$.errors[1]").value("Invoice amount must be greater than zero"));
+    }
+
+    @Test
+    @DisplayName("Should validate invoice with duplicate number warning")
+    void shouldValidateInvoiceWithDuplicateNumberWarning() throws Exception {
+        // Given
+        InvoiceRequest requestWithDuplicateNumber = new InvoiceRequest();
+        requestWithDuplicateNumber.setCustomer("13");
+        requestWithDuplicateNumber.setNumber("12"); // Duplicate number
+        requestWithDuplicateNumber.setAmount(100.0);
+
+        given(billingRepository.findAll()).willReturn(sampleInvoiceList);
+
+        // When & Then
+        mockMvc.perform(post("/billing/v1/validate")
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(requestWithDuplicateNumber)))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.valid").value(true))
+                .andExpect(jsonPath("$.errors").isEmpty())
+                .andExpect(jsonPath("$.warnings[0]").value("Invoice number already exists in the system"));
+    }
 }
